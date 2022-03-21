@@ -30,6 +30,10 @@ const double BETA = 0.75;
 #elif OPENMP
 // OpenMP lib
 #include <omp.h>
+#elif OPENACC 
+// OpenACC lib 
+#include <omp.h>
+#include <openacc.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
@@ -79,6 +83,14 @@ struct GraficObject{
 	// OpenMP part
 	bench_t* d_A;
 	bench_t* d_B;
+	#elif OPENACC
+	// OpenACC part 
+	bench_t* d_A;
+	bench_t* d_B;
+	float elapsed_time_HtD;
+	float elapsed_time_DtH;
+	//#pragma acc shape(d_A[0:n],d_B[0:n])
+	//#pragma acc policy<ainout> copyin(d_A) copyout(d_B)
 	#elif HIP
 	// Hip part --
 	bench_t* d_A;

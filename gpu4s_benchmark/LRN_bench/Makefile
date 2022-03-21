@@ -2,6 +2,7 @@
 # Compilers 
 CC = g++
 NVCC = /usr/local/cuda/bin/nvcc
+NVC = /opt/nvidia/hpc_sdk/Linux_x86_64/22.2/compilers/bin/nvc++ 
 HIP = /opt/rocm/hip/bin/hipcc
 # the build target executable:
 TARGET = lrn
@@ -16,6 +17,8 @@ CUFLAGS = -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcuda -lcudart
 OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/ -lOpenCL 
 # OPENMP FLAGS
 OMPFLAGS = -fopenmp -lm
+# OPENACC FLAGS
+ACCFLAGS =  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 
@@ -37,6 +40,8 @@ CUFOLDER = ./cuda/
 OPFOLDER = ./opencl/
 # OPENMP FOLDER
 OMPFOLDER = ./openmp/
+# OPENACC FOLDER 
+ACCFOLDER = ./openacc/
 # HIP FOLDER
 HIPFOLDER = ./hip/
 # CPU FOLDER
@@ -59,6 +64,8 @@ all-cuda: cuda cuda-opt cuda-lib
 all-opencl: opencl opencl-opt opencl-lib
 .PHONY: all-openmp
 all-openmp: openmp openmp-opt openmp-lib
+.PHONY: all-openacc
+all-openacc: openacc openacc-opt openacc-lib
 .PHONY: all-hip
 all-hip: hip hip-opt
 .PHONY: CUDA
@@ -67,6 +74,8 @@ CUDA: cuda
 OpenCL: opencl
 .PHONY: OpenMP
 OpenMP: openmp
+.PHONY: OpenACC
+OpenAcc: openacc
 .PHONY: Hip
 Hip: hip
 .PHONY: CUDA-opt
@@ -75,6 +84,8 @@ CUDA-opt: cuda-opt
 OpenCL-opt: opencl-opt
 .PHONY: OpenMP-opt
 OpenMP-opt: openmp-opt
+.PHONY: OpenACC-opt
+OpenACC-opt: openacc-opt
 .PHONY: Hip-opt
 Hip-opt: hip-opt
 .PHONY: CUDA-lib
@@ -83,6 +94,8 @@ CUDA-lib: cuda-lib
 OpenCL-lib: opencl-lib
 .PHONY: OpenMP-lib
 OpenMP-lib: openmp-lib
+.PHONY: OpenACC-lib
+OpenACC-lib: openacc-lib
 # End Shortcuts
 # CPU part
 cpu_functions.o: $(CPUFUNCTIONFOLDER)cpu_functions.cpp
@@ -118,14 +131,24 @@ main_opencl: main.cpp lib_opencl.o cpu_functions.o
 openmp:  main_openmp
 
 lib_omp.o: $(OMPFOLDER)lib_omp.cpp 
-	export OMP_NUM_THREADS=8
+	export OMP_NUM_THREADS=12
 	$(CC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENMP -c $(OMPFOLDER)lib_omp.cpp -o $(OMPFOLDER)lib_omp.o $(CFLAGS) $(OMPFLAGS)
 
 main_openmp: main.cpp lib_omp.o cpu_functions.o
 	mkdir -p $(OUTPUTFOLDER) 
 	$(CC) -D$(DATATYPE) -DOPENMP main.cpp $(OMPFOLDER)lib_omp.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGS)
 
-# End OpenMP
+# OpenACC Part 
+openacc: main_openacc
+
+lib_acc.o: $(ACCFOLDER)lib_acc.cpp
+	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENACC -c $(ACCFOLDER)lib_acc.cpp -o $(ACCFOLDER)lib_acc.o $(CFLAGS) $(ACCFLAGS)
+
+main_openacc: main.cpp lib_acc.o cpu_functions.o 
+	mkdir -p $(OUTPUTFOLDER)
+	$(NVC) -D$(DATATYPE) -DOPENACC main.cpp $(ACCFOLDER)lib_acc.o $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
+
+# End OpenACC
 
 # Hip part
 hip: main_hip
@@ -181,13 +204,24 @@ main_opencl_opt: main.cpp lib_opencl_opt.o cpu_functions.o
 openmp-opt:  main_openmp_opt
 
 lib_omp_opt.o: $(OMPFOLDER)lib_omp_opt.cpp 
-	export OMP_NUM_THREADS=8
+	export OMP_NUM_THREADS=12
 	$(CC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENMP -c $(OMPFOLDER)lib_omp_opt.cpp -o $(OMPFOLDER)lib_omp_opt.o $(CFLAGS) $(OMPFLAGS)
 
 main_openmp_opt: main.cpp lib_omp_opt.o cpu_functions.o
 	mkdir -p $(OUTPUTFOLDER) 
 	$(CC) -D$(DATATYPE) -DOPENMP main.cpp  $(OMPFOLDER)lib_omp_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGS)
 # End OpenMP optimized
+
+# OpenACC Part optimized
+openacc-opt:  main_openacc_opt
+
+lib_acc_opt.o: $(ACCFOLDER)lib_acc_opt.cpp 
+	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENMP -c $(ACCFOLDER)lib_acc_opt.cpp -o $(ACCFOLDER)lib_acc_opt.o $(CFLAGS) $(ACCFLAGS)
+
+main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o
+	mkdir -p $(OUTPUTFOLDER) 
+	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
+# End OpenACC optimized
 
 # Hip part
 hip-opt: main_hip_opt
@@ -234,6 +268,8 @@ clean:
 	rm -rf $(CPUFUNCTIONFOLDER)*.o
 	rm -rf $(OPFOLDER)*.o
 	rm -rf $(OMPFOLDER)*.o
+	rm -rf $(ACCFOLDER)*.o
 	rm -rf $(HIPFOLDER)*.o
 	rm -rf $(CUFOLDER)*.o
 	rm -rf $(OUTPUTFOLDER)$(TARGET)_*
+	

@@ -25,6 +25,10 @@ static const std::string type_kernel = "typedef double bench_t;\n";
 #elif OPENMP
 // OpenMP lib
 #include <omp.h>
+#elif OPENACC
+// OpenACC lib 
+#include <omp.h>
+#include <openacc.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
