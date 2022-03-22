@@ -22,6 +22,10 @@ static const std::string type_kernel = "#pragma OPENCL EXTENSION cl_khr_fp64 : e
 #elif OPENMP
 // OpenMP lib
 #include <omp.h>
+#elif OPENACC
+// OpenACC lib
+#include <omp.h>
+#include <openacc.h>
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
