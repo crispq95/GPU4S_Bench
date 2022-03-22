@@ -35,6 +35,10 @@ static const bench_t highpass_filter[HIGHPASSFILTERSIZE] = {-0.064538882629, 0.0
 #elif OPENMP
 // OpenMP lib
 #include <omp.h>
+#elif OPENACC
+// OpenACC lib
+#include <openacc.h>
+#include <omp.h>
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>

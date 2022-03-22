@@ -1,14 +1,7 @@
 #include "../benchmark_library.h"
 #include <cstring>
 
-#define max(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
-
-
-void init(GraficObject *device_object, char* device_name)
-{
+void init(GraficObject *device_object, char* device_name){
 	init(device_object, 0,0, device_name);
 }
 
@@ -20,46 +13,42 @@ void init(GraficObject *device_object, int platform, int device, char* device_na
 }
 
 
-bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix, unsigned int size_b_matrix)
+bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix, unsigned int size_b_matrix, unsigned int size_c_matrix)
 {
 	device_object->d_B = (bench_t*) malloc ( size_b_matrix * sizeof(bench_t*));
    	return true;
 }
 
 
-void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
+void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* kernel, unsigned int size_a, unsigned int size_b)
 {
 	device_object->d_A = h_A;
+	device_object->kernel = kernel;
 }
 
 
-void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m, unsigned int w, unsigned int stride, unsigned int lateral_stride)
+void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
 {
-		// Start compute timer
+	// Start compute timer
 	const double start_wtime = omp_get_wtime();
-	
-	bench_t max_value = 0;
-	const unsigned int block_size = n/stride;
-	#pragma acc parallel private(max_value)
+	const unsigned int kernel_rad = kernel_size / 2;
+	const unsigned int output_size = n + kernel_size - 1;
+
+	#pragma acc parallel 
 	{
 	#pragma acc loop  
-	for (unsigned int block = 0; block < block_size*block_size; ++block){
-		const unsigned int blockx = block%block_size;
-		const unsigned int blocky =	block/block_size;
-		const unsigned int block_zero = blockx*stride + blocky*stride*n;
-		max_value = device_object->d_A[block_zero];	
-		#pragma acc loop seq collapse(2) reduction(max:max_value)
-		for(unsigned int x = 0; x < stride; ++x){
-			for(unsigned int y = 0; y < stride; ++y){
-				max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
-			}
+	for(unsigned int i = 0; i < output_size; ++i){
+		bench_t tmp = 0;
+		#pragma acc loop tile(16,16) reduction(+:tmp)
+		for (unsigned int j = 0; j < kernel_size; ++j){		 
+			if (i +(j - kernel_size + 1) >= 0 && i +(j - kernel_size +1)<  n)
+    			tmp += device_object->kernel[kernel_size - j - 1] * device_object->d_A[i +(j - kernel_size + 1) ];
 		}
-		device_object->d_B[block] = max_value;	
+		device_object->d_B[i] = tmp;
 	}
 	}
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
-
 }
 
 
@@ -72,9 +61,9 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_format_timestamp, long int current_time)
 {
 	if (csv_format_timestamp){
-        printf("%.10f;%.10f;%.10f;%ld;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0,current_time);
-	}
-	else if (csv_format)
+        printf("%.10f;%.10f;%.10f;%ld;\n",(bench_t) 0, device_object->elapsed_time , (bench_t) 0, current_time);
+    }
+    else if (csv_format)
 	{
         printf("%.10f;%.10f;%.10f;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0);
     } 

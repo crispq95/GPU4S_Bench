@@ -26,6 +26,10 @@ typedef cufftDoubleComplex bench_cuda_complex;
 #include <CL/cl.hpp>
 #elif OPENMP
 #include <omp.h>
+#elif OPENACC
+// OpenACC
+#include <omp.h>
+#include <openacc.h>
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>

@@ -139,6 +139,7 @@ main_openmp: main.cpp lib_omp.o cpu_functions.o
 	$(CC) -D$(DATATYPE) -DOPENMP main.cpp $(OMPFOLDER)lib_omp.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGS)
 
 # OpenACC Part 
+
 openacc: main_openacc
 
 lib_acc.o: $(ACCFOLDER)lib_acc.cpp
@@ -213,6 +214,7 @@ main_openmp_opt: main.cpp lib_omp_opt.o cpu_functions.o
 # End OpenMP optimized
 
 # OpenACC Part optimized
+
 openacc-opt:  main_openacc_opt
 
 lib_acc_opt.o: $(ACCFOLDER)lib_acc_opt.cpp 
@@ -221,6 +223,7 @@ lib_acc_opt.o: $(ACCFOLDER)lib_acc_opt.cpp
 main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o
 	mkdir -p $(OUTPUTFOLDER) 
 	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
+
 # End OpenACC optimized
 
 # Hip part

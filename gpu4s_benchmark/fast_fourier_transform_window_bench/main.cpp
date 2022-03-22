@@ -99,7 +99,7 @@ int main(int argc, char *argv[]){
 	// copy memory to device
 	copy_memory_to_device(fft_bench, A, size_A);
 	// execute kernel
-	execute_kernel(fft_bench, arguments_parameters->window, arguments_parameters->size>>1);
+	execute_kernel(fft_bench, arguments_parameters->window, arguments_parameters->size>>1); 
 	// copy memory to host
 	copy_memory_to_host(fft_bench, d_B, size_B);
 

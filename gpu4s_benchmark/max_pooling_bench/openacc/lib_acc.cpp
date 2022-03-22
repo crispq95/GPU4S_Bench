@@ -43,10 +43,14 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	const unsigned int stride_squared = stride*stride;
 	unsigned int blockx, blocky, block_zero, x, y = 0;
 
-	//#pragma omp parallel for private(max_value,blockx, blocky, block_zero, x, y)
-	#pragma acc parallel private(max_value, blockx, blocky, block_zero, x, y)
+
+	#pragma acc enter data copyin(device_object[0:2])
 	{
-	#pragma acc loop 
+	#pragma acc enter data copyin(device_object->d_A[:n*n]) create(device_object->d_B[0:block_size*block_size]) 
+	{
+	//#pragma acc parallel 
+	//{
+	#pragma acc parallel loop parallel private(max_value, blockx, blocky, block_zero, x, y) present(device_object, device_object->d_A, device_object->d_B)
 	for (unsigned int block = 0; block < block_size*block_size; ++block)
 	{
 		blockx = block%block_size;
@@ -54,15 +58,17 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 		block_zero = blockx*stride + blocky*stride*n;
 		max_value = device_object->d_A[block_zero];	
 
-		#pragma acc loop reduction(max:max_value)
+		#pragma acc loop seq reduction(+:max_value)
 		for(unsigned int i = 0; i < stride_squared; ++i)
 		{
 			x = i%stride;
 			y = i/stride; 
 			max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
 		}
-		device_object->d_B[block] = max_value;	
+		 device_object->d_B[block] = max_value;
 	}
+	}
+	#pragma acc exit data copyout(device_object->d_B[0:block_size*block_size])
 	}
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
