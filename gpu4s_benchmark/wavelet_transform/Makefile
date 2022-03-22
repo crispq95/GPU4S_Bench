@@ -18,7 +18,7 @@ OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/
 # OPENMP FLAGS
 OMPFLAGS = -fopenmp -lm
 # OPENACC FLAGS
-ACCFLAGS =  -acc=gpu  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
+ACCFLAGS =  -acc=gpu -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 
