@@ -37,7 +37,7 @@ void transpose(bench_t *A, bench_t *B, int n) {
 }
 
 
-void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
+void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
@@ -48,10 +48,15 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
     transpose(device_object->d_B, B_transposed, n);
 	unsigned int i, j, k;
 	
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop collapse(2) 
+	#else
 	#pragma omp parallel for
+	#endif
 	for (i = 0; i < n; i++) { 
 		for (j = 0; j < n; j++) {
 			bench_t dot  = 0;
+			#pragma omp loop reduction(+:dot)
 			for (k = 0; k < n; k++) {
 				dot += device_object->d_A[i*n+k]*B_transposed[j*n+k];
 			} 

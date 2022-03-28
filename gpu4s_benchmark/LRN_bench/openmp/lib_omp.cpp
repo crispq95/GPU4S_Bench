@@ -34,14 +34,18 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 	
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < n; ++i)
-	{
-		for (unsigned int j = 0; j < n; ++j)
-		{
+	/*#pragma omp declare mapper( d_o: GraficObject device_object ) \
+						map( device_object->d_A[0:n*n], \
+						device_object->d_B[0:n*n] )*/
+
+
+	#pragma omp target teams distribute parallel for 
+	for (unsigned int i = 0; i < n; ++i){
+		for (unsigned int j = 0; j < n; ++j){
 			device_object->d_B[i*n+j] = device_object->d_A[i*n+j]/pow((K+ALPHA*pow(device_object->d_A[i*n+j],2)),BETA);
 		}
 	}
+	
 
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;

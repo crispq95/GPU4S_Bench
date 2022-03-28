@@ -31,7 +31,11 @@ result_bench_t get_mean_matrix(const bench_t* A,const int size){
 	
 	bench_t sum_val = 0;
 	
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop reduction(+:sum_val)
+	#else
 	#pragma omp parallel for reduction(+:sum_val)
+	#endif
 	for (unsigned int i=0; i < size*size; ++i)
 	{
 		sum_val += A[i];
@@ -56,7 +60,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	result_bench_t result_mean_a = 0;
 	result_bench_t result_mean_b = 0;
 	
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop reduction(+:acumulate_value_a_b,acumulate_value_a_a,acumulate_value_b_b)
+	#else
 	#pragma parallel for reduction(+:acumulate_value_a_b,acumulate_value_a_a,acumulate_value_b_b)
+	#endif
 	for (unsigned int i=0; i<size*size; i++){
 		result_mean_a = device_object->d_A[i] - mean_a_matrix;
 		result_mean_b = device_object->d_B[i] - mean_b_matrix;

@@ -41,7 +41,11 @@ void execute_kernel(GraficObject *device_object, int64_t size)
     n = size<<1;
     j=1;
 
+    #ifdef TARGET_GPU
+	//#pragma omp target teams distribute parallel for private(i,j,m)
+	#else
 	#pragma parallel for schedule(static)
+	#endif
     for (i=1; i<n; i+=2) {
         if (j>i) {
             std::swap(device_object->d_Br[j-1], device_object->d_Br[i-1]);
@@ -66,7 +70,11 @@ void execute_kernel(GraficObject *device_object, int64_t size)
         wr = 1.0;
         wi = 0.0;
 
-		#pragma parallel for collapse(2)
+        #ifdef TARGET_GPU
+        //#pragma omp target teams distribute parallel for collapse(2) private(i,j,m, tempr, tempi) reduction(+:wr,wi)
+        #else
+        #pragma parallel for collapse(2)
+        #endif
         for (m=1; m < mmax; m += 2) {
             for (i=m; i <= n; i += istep) {
                 j=i+mmax;

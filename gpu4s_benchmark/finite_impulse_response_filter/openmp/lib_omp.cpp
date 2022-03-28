@@ -27,23 +27,32 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* k
 }
 
 
-void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
+void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 	const unsigned int kernel_rad = kernel_size / 2;
 	const unsigned int output_size = n + kernel_size - 1;
 
+	#ifdef TARGET_GPU
+	#pragma omp target loop
+	#else
 	#pragma omp parallel for
+	#endif
 	for(unsigned int i = 0; i < output_size; ++i)
 	{
+		bench_t tmp = 0; 
+		#ifdef TARGET_GPU
+		#pragma omp loop reduction(+:tmp)
+		#endif
 		for (unsigned int j = 0; j < kernel_size; ++j)
 		{		 
 			if (i +(j - kernel_size + 1) >= 0 && i +(j - kernel_size +1)<  n)
     		{	
-    			device_object->d_B[i] += device_object->kernel[kernel_size - j - 1] * device_object->d_A[i +(j - kernel_size + 1) ];
+				tmp += device_object->kernel[kernel_size - j - 1] * device_object->d_A[i +(j - kernel_size + 1) ];
     		}
 		}
+		device_object->d_B[i] = tmp; 
 	}
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;

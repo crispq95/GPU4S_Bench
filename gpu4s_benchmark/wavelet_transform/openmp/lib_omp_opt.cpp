@@ -46,7 +46,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	device_object->d_B[size] = device_object->d_A[1] - (int)( ((9.0/16.0) * (device_object->d_A[0] + device_object->d_A[2])) - ((1.0/16.0) * (device_object->d_A[2] + device_object->d_A[4])) + (1.0/2.0)); 
 	device_object->d_B[2*size-2] = device_object->d_A[2*size - 3] - (int)( ((9.0/16.0) * (device_object->d_A[2*size -4] + device_object->d_A[2*size -2])) - ((1.0/16.0) * (device_object->d_A[2*size - 6] + device_object->d_A[2*size - 2])) + (1.0/2.0));
 	device_object->d_B[2*size-1] = device_object->d_A[2*size - 1] - (int)( ((9.0/8.0) * (device_object->d_A[2*size -2])) -  ((1.0/8.0) * (device_object->d_A[2*size - 4])) + (1.0/2.0));
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop 
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 1; i < size-2; ++i){
 		//store
 		device_object->d_B[i+size] = device_object->d_A[2*i+1] - (int)( ((9.0/16.0) * (device_object->d_A[2*i] + device_object->d_A[2*i+2])) - ((1.0/16.0) * (device_object->d_A[2*i - 2] + device_object->d_A[2*i + 4])) + (1.0/2.0));
@@ -54,7 +58,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	
 	// low_part
 	device_object->d_B[0] = device_object->d_A[0] - (int)(- (device_object->d_B[size]/2.0) + (1.0/2.0));
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop 
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 1; i < size; ++i){	
 		device_object->d_B[i] = device_object->d_A[2*i] - (int)( - (( device_object->d_B[i + size -1] +  device_object->d_B[i + size])/ 4.0) + (1.0/2.0) );;
 	}
@@ -68,7 +76,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	int gi_start = -(HIGHPASSFILTERSIZE / 2 );
 	int gi_end = HIGHPASSFILTERSIZE / 2;
 
-	#pragma omp parallel for 
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop 
+	#else
+	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < size; ++i){
 		// loop over N elements of the input vector.
 		bench_t sum_value_low = 0;

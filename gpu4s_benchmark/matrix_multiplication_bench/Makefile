@@ -19,6 +19,7 @@ CUFLAGS = -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcuda -lcudart
 OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/ -lOpenCL 
 # OPENMP FLAGS
 OMPFLAGS = -fopenmp -lm
+OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp 
 # OPENACC FLAGS
 ACCFLAGS =  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # HIP FLAGS
@@ -66,26 +67,28 @@ all:
 	@echo "YOU NEED TO SELECT A PLATFORM -> make CPU / make CUDA / make OpenCL / make CUDA-opt / make OpenCL-opt / make CUDA-lib / make OpenCL-lib"
 # End Main
 # Shortcuts
-.PHONY: all-cpu
-all-cpu: cpu
+.PHONY: all-bin
+all-bin: cuda cuda-opt cuda-lib opencl opencl-opt opencl-lib openmp openmp-opt openmp-lib hip hip-opt
 .PHONY: all-cuda
 all-cuda: cuda cuda-opt cuda-lib
 .PHONY: all-opencl
 all-opencl: opencl opencl-opt opencl-lib
 .PHONY: all-openmp
 all-openmp: openmp openmp-opt openmp-lib
+.PHONY: all-openmpgpu
+all-openmpgpu: openmpgpu openmpgpu-opt openmpgpu-lib
 .PHONY: all-openacc
 all-openacc: openacc openacc-opt openacc-lib
 .PHONY: all-hip
 all-hip: hip hip-opt
-.PHONY: CPU
-CPU: cpu
 .PHONY: CUDA
 CUDA: cuda
 .PHONY: OpenCL
 OpenCL: opencl
 .PHONY: OpenMP
 OpenMP: openmp
+.PHONY: OpenMPGPU
+OpenMPGPU: openmpgpu
 .PHONY: OpenACC
 OpenAcc: openacc
 .PHONY: Hip
@@ -96,6 +99,8 @@ CUDA-opt: cuda-opt
 OpenCL-opt: opencl-opt
 .PHONY: OpenMP-opt
 OpenMP-opt: openmp-opt
+.PHONY: OpenMPGPU-opt
+OpenMPGPU-opt: openmpgpu-opt
 .PHONY: OpenACC-opt
 OpenACC-opt: openacc-opt
 .PHONY: Hip-opt
@@ -106,6 +111,8 @@ CUDA-lib: cuda-lib
 OpenCL-lib: opencl-lib
 .PHONY: OpenMP-lib
 OpenMP-lib: openmp-lib
+.PHONY: OpenMPGPU-lib
+OpenMPGPU-lib: openmpgpu-lib
 .PHONY: OpenACC-lib
 OpenACC-lib: openacc-lib
 # End Shortcuts
@@ -164,6 +171,18 @@ main_openmp: main.cpp lib_omp.o cpu_functions.o
 	$(CC) -D$(DATATYPE) -DOPENMP main.cpp $(OMPFOLDER)lib_omp.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGS)
 
 # End OpenMP
+
+# OpenMP GPU Part
+openmpgpu:  main_openmp_gpu
+
+lib_omp_gpu.o: $(OMPFOLDER)lib_omp.cpp 
+	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DTARGET_GPU -DOPENMP -c $(OMPFOLDER)lib_omp.cpp -o $(OMPFOLDER)lib_omp_gpu.o $(CFLAGS) $(OMPGPUFLAGS)
+
+main_openmp_gpu: main.cpp lib_omp_gpu.o cpu_functions.o
+	mkdir -p $(OUTPUTFOLDER) 
+	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp $(OMPFOLDER)lib_omp_gpu.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_gpu_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGSGPU)
+# End OpenMP GPU Part
+
 
 # OpenACC Part 
 openacc: main_openacc
@@ -225,6 +244,18 @@ main_openmp_opt: main.cpp lib_omp_opt.o cpu_functions.o
 	mkdir -p $(OUTPUTFOLDER) 
 	$(CC) -D$(DATATYPE) -DOPENMP main.cpp $(OMPFOLDER)lib_omp_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPFLAGS)
 # End OpenMP optimized
+
+# OpenMP GPU Part optimized
+openmpgpu-opt:  main_openmp_gpu_opt
+
+lib_omp_gpu_opt.o: $(OMPFOLDER)lib_omp_opt.cpp 
+	export OMP_NUM_THREADS=8
+	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DTARGET_GPU -DOPENMP -c $(OMPFOLDER)lib_omp_opt.cpp -o $(OMPFOLDER)lib_omp_gpu_opt.o $(CFLAGS) $(OMPGPUFLAGS)
+
+main_openmp_gpu_opt: main.cpp lib_omp_gpu_opt.o cpu_functions.o
+	mkdir -p $(OUTPUTFOLDER) 
+	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(OMPFOLDER)lib_omp_gpu_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_omp_gpu_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(OMPGPUFLAGS)
+# End OpenMP GPU optimized
 
 # OpenACC Part optimized
 openacc-opt:  main_openacc_opt

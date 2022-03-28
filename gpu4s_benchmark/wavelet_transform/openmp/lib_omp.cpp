@@ -44,7 +44,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	unsigned int full_size = size * 2;
 	// integer computation
 	// high part
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop 	
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < size; ++i){
 		bench_t sum_value_high = 0;
 		// specific cases
@@ -64,12 +68,13 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 		
 		//store
 		device_object->d_B[i+size] = sum_value_high;
-
-	
-
 	}
 	// low_part
+	#ifdef TARGET_GPU
+	#pragma omp target loop
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < size; ++i){
 		bench_t sum_value_low = 0;
 		if(i == 0){
@@ -92,11 +97,19 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	int gi_start = -(HIGHPASSFILTERSIZE / 2 );
 	int gi_end = HIGHPASSFILTERSIZE / 2;
 
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop 
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < size; ++i){
 		// loop over N elements of the input vector.
 		bench_t sum_value_low = 0;
 		// first process the lowpass filter
+		
+		#ifdef TARGET_GPU
+		#pragma omp  loop reduction(+:sum_value_low)
+		#endif
 		for (int hi = hi_start; hi < hi_end + 1; ++hi){
 			int x_position = (2 * i) + hi;
 			if (x_position < 0) {
@@ -115,6 +128,9 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 		device_object->d_B[i] = sum_value_low;
 		bench_t sum_value_high = 0;
 		// second process the Highpass filter
+		#ifdef TARGET_GPU
+		#pragma omp  loop reduction(+:sum_value_high)
+		#endif
 		for (int gi = gi_start; gi < gi_end + 1; ++gi){
 			int x_position = (2 * i) + gi + 1;
 			if (x_position < 0) {

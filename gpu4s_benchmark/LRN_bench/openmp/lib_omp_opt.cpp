@@ -35,7 +35,15 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	const unsigned int squared_size = n*n;
 	
+	/*
 	#pragma omp parallel for
+	for (unsigned int i = 0; i < squared_size; ++i)
+	{
+		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);
+	}*/
+
+	
+	#pragma omp target teams distribute parallel for 
 	for (unsigned int i = 0; i < squared_size; ++i)
 	{
 		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);

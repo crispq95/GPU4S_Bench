@@ -104,7 +104,11 @@ void execute_kernel(GraficObject *device_object, int64_t window, int64_t size)
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 
+    #ifdef TARGET_GPU
+    #pragma omp target parallel loop
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < (size * 2 - window + 1); i+=2){
         aux_fft_function(device_object, window, i);
     }

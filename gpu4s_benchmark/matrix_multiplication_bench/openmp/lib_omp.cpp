@@ -33,7 +33,11 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	const double start_wtime = omp_get_wtime();
 
 	// Compute traditional matrix multiplication approach 
+	#ifdef TARGET_GPU
+	#pragma omp target parallel loop collapse(3)
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int i = 0; i < n; i++)
 	{
 		for (unsigned int j = 0; j < w; j++)

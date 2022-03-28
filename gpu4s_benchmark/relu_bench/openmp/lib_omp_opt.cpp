@@ -27,13 +27,17 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 }
 
 
-void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
+void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 
 	// Compute optimized relu
-	#pragma omp parallel for
+	#ifdef TARGET_GPU
+	#pragma omp target teams loop 
+	#else
+	#pragma omp parallel for 
+	#endif
 	for (unsigned int i = 0; i < n*n; ++i)
 	{
 		device_object->d_B[i] = device_object->d_A[i] > 0 ? device_object->d_A[i] : 0;

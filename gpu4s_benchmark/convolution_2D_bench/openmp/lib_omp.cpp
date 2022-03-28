@@ -39,12 +39,21 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	const unsigned int squared_kernel_size = kernel_size * kernel_size;
 	
+	#ifdef TARGET_GPU
+	//TODO arreglar este
+	#pragma omp target loop reduction(+:sum) private(x, y, kx, ky, value)
+	#else
 	#pragma omp parallel for private(x, y, kx, ky, sum, value)
+	#endif
 	for (unsigned int block = 0; block < n*n; ++block)
 	{
 		x = block/n;
 		y = block%n;
 		sum = 0;
+
+		#ifdef TARGET_GPU
+		#pragma omp loop reduction(+:sum)
+		#endif
 		for(unsigned int k = 0; k < squared_kernel_size; ++k)
 		{
 			value = 0;

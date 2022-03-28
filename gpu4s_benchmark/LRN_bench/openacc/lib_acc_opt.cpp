@@ -1,13 +1,14 @@
 #include "../benchmark_library.h"
-#include <cmath>
 #include <cstring>
+#include <cmath>
 
-void init(GraficObject *device_object, char* device_name){
+void init(GraficObject *device_object, char* device_name)
+{
 	init(device_object, 0,0, device_name);
 }
 
 
-void init(GraficObject *device_object, int platform, int device, char* device_name)
+void init(GraficObject *device_object, int platform ,int device, char* device_name)
 {
 	// TBD Feature: device name. -- Bulky generic platform implementation
 	strcpy(device_name,"Generic device");
@@ -27,36 +28,16 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 }
 
 
-void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m, unsigned int w)
+void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
+
+	const unsigned int squared_size = n*n;
 	
-	bench_t sum_values = 0;
-	
-	#ifdef TARGET_GPU
-	//TODO
-	#else
-	#pragma omp parallel for reduction(+ : sum_values)
-	#endif
-	for (unsigned int i = 0; i < n; ++i){
-		for (unsigned int j = 0; j < n; ++j)
-		{			
-			device_object->d_B[i*n+j] = exp (device_object->d_A[i*n+j]);
-			sum_values = sum_values + device_object->d_B[i*n+j];
-		}
-	}
-	#ifdef TARGET_GPU
-	//TODO
-	#else
-	#pragma omp parallel for
-	#endif
-	for (unsigned int i = 0; i < n; ++i)
-	{
-		for (unsigned int j = 0; j < n; ++j)
-		{
-			device_object->d_B[i*n+j] = (device_object->d_B[i*n+j]/sum_values);
-		}
+	#pragma acc parallel loop
+	for (unsigned int i = 0; i < squared_size; ++i){
+		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);
 	}
 
 	// End compute timer
@@ -73,7 +54,7 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_format_timestamp, long int current_time)
 {
 	if (csv_format_timestamp){
-        printf("%.10f;%.10f;%.10f;%ld;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0,current_time);
+        printf("%.10f;%.10f;%.10f;%ld;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0, current_time);
     }
     else if (csv_format)
 	{

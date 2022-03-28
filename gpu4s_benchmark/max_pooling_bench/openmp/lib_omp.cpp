@@ -43,22 +43,28 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	const unsigned int stride_squared = stride*stride;
 	unsigned int blockx, blocky, block_zero, x, y = 0;
 
+	#ifdef TARGET_GPU
+	#pragma omp target loop reduction(max: max_value) private(max_value,blockx, blocky, block_zero, x, y)
+	#else
 	#pragma omp parallel for private(max_value,blockx, blocky, block_zero, x, y)
+	#endif
 	for (unsigned int block = 0; block < block_size*block_size; ++block)
 	{
+		blockx = block%block_size;
+		blocky = block/block_size;
+		block_zero = blockx*stride + blocky*stride*n;
+		max_value = device_object->d_A[block_zero];	
+		
+		#ifdef TARGET_GPU
+		#pragma omp loop reduction(max: max_value) private(x,y)
+		#endif
+		for(unsigned int i = 0; i < stride_squared; ++i)
 		{
-			blockx = block%block_size;
-			blocky = block/block_size;
-			block_zero = blockx*stride + blocky*stride*n;
-			max_value = device_object->d_A[block_zero];		
-			for(unsigned int i = 0; i < stride_squared; ++i)
-			{
-				x = i%stride;
-				y = i/stride; 
-				max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
-			}
-			device_object->d_B[block] = max_value;	
+			x = i%stride;
+			y = i/stride; 
+			max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
 		}
+		device_object->d_B[block] = max_value;	
 	}
 
 	// End compute timer

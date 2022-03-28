@@ -34,14 +34,22 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	int kernel_rad = kernel_size / 2;
 
+	#ifdef TARGET_GPU
+	//TODO arreglar este
+	#pragma omp target loop 
+	#else
 	#pragma omp parallel for
+	#endif
 	for (unsigned int block = 0; block < n*n; ++block)
 	{
 		const unsigned int x = block/n;
 		const unsigned int y = block%n;
 		bench_t sum = 0;
-		for(int i = -kernel_rad; i <= kernel_rad; ++i)
-		{
+
+		#ifdef TARGET_GPU
+		#pragma omp loop collapse(2) reduction(+:sum) 
+		#endif
+		for(int i = -kernel_rad; i <= kernel_rad; ++i){
 			for(int j = -kernel_rad; j <= kernel_rad; ++j){
 				bench_t value = 0;
 				if (i + x < 0 || j + y < 0)
