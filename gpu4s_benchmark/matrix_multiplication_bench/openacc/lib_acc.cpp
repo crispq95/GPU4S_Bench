@@ -1,6 +1,8 @@
 #include "../benchmark_library.h"
 #include <cstring>
 
+#include <CL/sycl.hpp>
+
 void init(GraficObject *device_object, char* device_name){
 	init(device_object, 0,0, device_name);
 }
@@ -30,7 +32,7 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* h
 void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m, unsigned int w)
 {   
     const double start_wtime = omp_get_wtime();
-	
+	/*
 	// Compute traditional matrix multiplication approach 
 	#pragma acc parallel loop collapse(2)
 	for (unsigned int i = 0; i < n; i++){
@@ -40,9 +42,9 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 			}
 		}
 	}
+	*/
 	
 	
-	/*
 	// Compute traditional matrix multiplication approach 
 	#pragma acc enter data copyin(device_object[0:2])
 	{
@@ -60,7 +62,7 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	
 	#pragma acc exit data copyout(device_object->d_C[0:m*w])
 	}
-	*/	
+		
 
 
 	// End compute timer
