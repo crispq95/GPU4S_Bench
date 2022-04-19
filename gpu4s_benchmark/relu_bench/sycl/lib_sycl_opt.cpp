@@ -42,17 +42,17 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	
 	//startTimeList.at(i) = wall_clock_t::now();
 	const double start_wtime = omp_get_wtime();
+
 	
 	#ifdef USM
 	myQueue
 	   .parallel_for<class relu>(
-			sycl::range<2>{n,n}, 
-			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<2> idx){
-				int row = idx[0], col = idx[1]; 
-				if (d_A_local[row*n+col] > 0){
-					d_B_local[row*n+col] = d_A_local[row*n+col];
+			sycl::range{n*n}, 
+			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<1> idx){
+				if (d_A_local[idx] > 0){
+					d_B_local[idx] = d_A_local[idx];
 				}else {
-					d_B_local[row*n+col] = 0;
+					d_B_local[idx] = 0;
 				}
 			}); 
 
@@ -69,14 +69,9 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 		
 		cgh.parallel_for<class relu>(
-			sycl::range<2>{n,n}, [=](sycl::id<2> idx){
-			int row = idx[0], col = idx[1]; 
-
-			if (accA[row*n+col] > 0){
-				accB[row*n+col] = accA[row*n+col];
-			}else {
-				accB[row*n+col] = 0;
-			}
+			sycl::range<1>{n*n}, [=](sycl::id<1> idx){
+			accB[i] = (accA[idx] > 0) ? accA[idx] : 0;
+			
 		});	
 	}); 
 	e.wait();
