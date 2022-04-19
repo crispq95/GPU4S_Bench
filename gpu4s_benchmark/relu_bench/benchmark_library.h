@@ -29,6 +29,10 @@ static const std::string type_kernel = "#pragma OPENCL EXTENSION cl_khr_fp64 : e
 // OpenACC lib 
 #include <omp.h>
 #include <openacc.h>
+#elif SYCL
+// SYCL lib 
+#include <CL/sycl.hpp>
+//#include <omp.h>
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>

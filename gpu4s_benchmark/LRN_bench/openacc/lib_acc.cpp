@@ -38,9 +38,9 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 
-	//#pragma acc enter data copyin(device_object[0:2])
-	//{
-	//#pragma acc enter data copyin(device_object->d_A[0:n*n]) create(device_object->d_B[0:n*n]) 
+	#pragma acc enter data copyin(device_object[0:2])
+	{
+	#pragma acc enter data copyin(device_object->d_A[0:n*n]) create(device_object->d_B[0:n*n]) 
 	#pragma acc data copyin(device_object[:2], device_object->d_A[:n*n]) copyout(device_object->d_B[0:n*n])
 	{
 	#pragma acc parallel loop 
@@ -51,8 +51,8 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	}
 	}
 	
-	//#pragma acc exit data copyout(device_object->d_B[0:n*n])
-	//}
+	#pragma acc exit data copyout(device_object->d_B[0:n*n])
+	}
 	
 		//if(i==0)
 		//	printf("%d\n",acc_on_device(acc_device_host));

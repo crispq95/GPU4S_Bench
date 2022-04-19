@@ -34,6 +34,11 @@ const double BETA = 0.75;
 // OpenACC lib 
 #include <omp.h>
 #include <openacc.h> 
+#include <chrono>
+#elif SYCL
+// SYCL lib 
+#include <CL/sycl.hpp>
+#include <omp.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
@@ -89,8 +94,9 @@ struct GraficObject{
 	bench_t* d_B;
 	float elapsed_time_HtD;
 	float elapsed_time_DtH;
-	//#pragma acc shape(d_A[0:n],d_B[0:n])
-	//#pragma acc policy<ainout> copyin(d_A) copyout(d_B)
+	#elif SYCL
+	bench_t* d_A;
+	bench_t* d_B;
 	#elif HIP
 	// Hip part --
 	bench_t* d_A;
@@ -107,7 +113,35 @@ struct GraficObject{
 	bench_t* d_B;
 	#endif
 	float elapsed_time;
+	// provisional 
+	double elapsed_time_HtD;
+	double elapsed_time_DtH;
 };
+					
+#ifdef SYCL 
+class my_device_selector : public sycl::device_selector {
+	public:
+	int operator()(const sycl::device& dev) const override {
+		#ifdef GPU
+		if ( dev.has(sycl::aspect::gpu)) {
+			return 1;
+		}else {
+			return -1;
+		}
+		#else
+		if ( dev.has(sycl::aspect::cpu)) {
+			return 1;
+		}else {
+			return -1; 
+		}
+		#endif
+		
+		return -1;	
+	}
+};
+
+auto myQueue = sycl::queue{my_device_selector{}}; 
+#endif
 
 void init(GraficObject *device_object, char* device_name);
 void init(GraficObject *device_object, int platform, int device, char* device_name);

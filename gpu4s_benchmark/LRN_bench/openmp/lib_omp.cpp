@@ -38,13 +38,40 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 						map( device_object->d_A[0:n*n], \
 						device_object->d_B[0:n*n] )*/
 
+	 
+	#ifdef TARGET_GPU
+	//#pragma omp target enter data map(alloc:device_object->d_A[:n*n])
+	//#pragma omp target enter data map(alloc:device_object->d_B[:n*n])
+	//#pragma omp requires unified_shared_memory
 
-	#pragma omp target teams distribute parallel for 
+	bench_t*d_B = (bench_t*) malloc(n*n * sizeof(bench_t));
+	bench_t*d_A = (bench_t*) malloc(n*n * sizeof(bench_t));
+
+	d_A = device_object->d_A;
+
+	#pragma omp target map(from:d_B[0:n*n]) map(to:d_A[0:n*n])
+	//#pragma omp  map(from:d_B[0:n*n]) map(to:d_A[0:n*n])
+	#pragma omp  teams distribute parallel for collapse(2)
+	for (unsigned int i = 0; i < n; ++i){
+		for (unsigned int j = 0; j < n; ++j){
+			//device_object->d_B[i*n+j] = device_object->d_A[i*n+j]/pow((K+ALPHA*pow(device_object->d_A[i*n+j],2)),BETA);
+			d_B[i*n+j] = d_A[i*n+j]/pow((K+ALPHA*pow(d_A[i*n+j],2)),BETA);
+			
+		}
+	}
+
+	device_object->d_B = d_B; 
+	//#pragma omp target exit data map(delete:device_object->d_A[:n*n])
+	//#pragma omp target exit data map(delete:device_object->d_B[:n*n])
+
+	#else
+	#pragma omp parallel for 
 	for (unsigned int i = 0; i < n; ++i){
 		for (unsigned int j = 0; j < n; ++j){
 			device_object->d_B[i*n+j] = device_object->d_A[i*n+j]/pow((K+ALPHA*pow(device_object->d_A[i*n+j],2)),BETA);
 		}
 	}
+	#endif
 	
 
 	// End compute timer

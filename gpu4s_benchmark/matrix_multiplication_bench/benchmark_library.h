@@ -30,14 +30,12 @@ static const std::string type_kernel = "typedef double bench_t;\n";
 #include <omp.h>
 #include <openacc.h> 
 #elif SYCL
-// OpenACC lib 
-
+// SYCL lib 
 #if __has_include(<SYCL/sycl.hpp>)
 #include <SYCL/sycl.hpp>
 #else
 #include <CL/sycl.hpp>
 #endif
-
 #include <omp.h> 
 #elif HIP
 // HIP part

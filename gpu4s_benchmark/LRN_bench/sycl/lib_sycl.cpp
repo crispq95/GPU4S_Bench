@@ -2,7 +2,6 @@
 #include <cstring>
 #include <cmath>
 
-
 void init(GraficObject *device_object, char* device_name)
 {
 	init(device_object, 0,0, device_name);
@@ -11,21 +10,30 @@ void init(GraficObject *device_object, char* device_name)
 
 void init(GraficObject *device_object, int platform ,int device, char* device_name)
 {
-	// TBD Feature: device name. -- Bulky generic platform implementation
-	strcpy(device_name,"Generic device");
+	std :: cout << "Using device: " << myQueue.get_device().get_info<sycl::info::device::name>() << "\n";
 }
 
 
 bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix, unsigned int size_b_matrix)
 {
+	#ifdef USM
+	device_object->d_B = sycl::malloc_device<bench_t>(size_b_matrix, myQueue);
+	#else
 	device_object->d_B = (bench_t*) malloc ( size_b_matrix * sizeof(bench_t*));
+	#endif
+
    	return true;
 }
 
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
 {
+	#ifdef USM
+	device_object->d_A = sycl::malloc_device<bench_t>(size_a, myQueue);
+	myQueue.memcpy(device_object->d_A, h_A, (size_a)*sizeof(bench_t)).wait();
+	#else
 	device_object->d_A = h_A;
+	#endif
 }
 
 
@@ -36,19 +44,38 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	const unsigned int squared_size = n*n;
 	
-	/*
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < squared_size; ++i)
-	{
-		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);
-	}*/
+	#ifdef USM
+	myQueue
+	   .parallel_for<class LRN_bench_kernel>(
+			sycl::range<2>{n,n}, 
+			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<2> idx){
+					int row = idx[0], col= idx[1];
+					//test this
+					d_B_local[row*n+col] = d_A_local[row*n+col]/pow((K+ALPHA*pow(d_A_local[row*n+col],2)),BETA);
+			}).wait();
+	#else 
+		try {
+		// //create buffers 
+		auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*n}};
+		auto buffB = sycl::buffer{device_object->d_B, sycl::range{n*n}};
 
-	
-	#pragma omp target teams distribute parallel for 
-	for (unsigned int i = 0; i < squared_size; ++i)
-	{
-		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);
-	}
+		auto e = myQueue.submit([&](sycl::handler& cgh){
+			//create accessors 
+			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+			
+			
+			cgh.parallel_for<class LRN_bench_kernel>(sycl::range<2>{n,n}, [=](sycl::id<2> idx){
+				int row = idx[0], col= idx[1];
+				accB[row*n+col] = accA[row*n+col]/pow((K+ALPHA*pow(accA[row*n+col],2)),BETA);
+			});	
+		}); 
+
+		e.wait();
+		}catch (const sycl::exception& e) {
+        	std::cout << "Exception caught: " << e.what() << std::endl;
+    	}
+	#endif
 
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
@@ -57,7 +84,12 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 {	     
+	const double start_wtime = omp_get_wtime();
+	#ifdef USM
+	myQueue.memcpy(h_C, device_object->d_B, (size)*sizeof(bench_t)).wait();
+	#else
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size);
+	#endif
 }
 
 
@@ -82,5 +114,10 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
 
 void clean(GraficObject *device_object)
 {
+	#ifdef USM
+	sycl::free(device_object->d_A, myQueue);
+    sycl::free(device_object->d_B, myQueue);
+	#else
 	free(device_object->d_B);
+	#endif
 }
