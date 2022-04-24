@@ -3,6 +3,7 @@
 CC = g++
 NVCC = /usr/local/cuda/bin/nvcc
 NVC = /opt/nvidia/hpc_sdk/Linux_x86_64/22.2/compilers/bin/nvc++ 
+SYCL = dpcpp
 HIP = /opt/rocm/hip/bin/hipcc
 # the build target executable:
 TARGET = convolution_2D
@@ -34,6 +35,10 @@ DATATYPE =
 BLOCKSIZE = 4
 BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 
+# SYCL default device is CPU
+DEVICETARGET = CPU
+MODEL = USM
+
 # FOLDERS
 # CUDA FOLDER
 CUFOLDER = ./cuda/
@@ -43,6 +48,8 @@ OPFOLDER = ./opencl/
 OMPFOLDER = ./openmp/
 # OPENACC FOLDER 
 ACCFOLDER = ./openacc/
+# SYCL FOLDER 
+SYCLFOLDER = ./sycl/
 # HIP FOLDER
 HIPFOLDER = ./hip/
 # CPU FOLDER
@@ -69,6 +76,8 @@ all-openmp: openmp openmp-opt openmp-lib
 all-openmpgpu: openmpgpu openmpgpu-opt openmpgpu-lib
 .PHONY: all-openacc
 all-openacc: openacc openacc-opt openacc-lib
+.PHONY: all-sycl 
+all-sycl: sycl sycl-opt sycl-lib
 .PHONY: all-hip
 all-hip: hip hip-opt
 .PHONY: CUDA
@@ -81,6 +90,8 @@ OpenMP: openmp
 OpenMPGPU: openmpgpu
 .PHONY: OpenACC
 OpenAcc: openacc
+.PHONY: SYCL
+SYCL: sycl
 .PHONY: Hip
 Hip: hip
 .PHONY: CUDA-opt
@@ -93,6 +104,8 @@ OpenMP-opt: openmp-opt
 OpenMPGPU-opt: openmpgpu-opt
 .PHONY: OpenACC-opt
 OpenACC-opt: openacc-opt
+.PHONY: SYCL-opt
+SYCL-opt: sycl-opt
 .PHONY: Hip-opt
 Hip-opt: hip-opt
 .PHONY: CUDA-lib
@@ -105,6 +118,8 @@ OpenMP-lib: openmp-lib
 OpenMPGPU-lib: openmpgpu-lib
 .PHONY: OpenACC-lib
 OpenACC-lib: openacc-lib
+.PHONY: SYCL-lib
+SYCL-lib: sycl-li
 # End Shortcuts
 # CPU part
 cpu_functions.o: $(CPUFUNCTIONFOLDER)cpu_functions.cpp
@@ -170,8 +185,18 @@ lib_acc.o: $(ACCFOLDER)lib_acc.cpp
 main_openacc: main.cpp lib_acc.o cpu_functions.o 
 	mkdir -p $(OUTPUTFOLDER)
 	$(NVC) -D$(DATATYPE) -DOPENACC main.cpp $(ACCFOLDER)lib_acc.o $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
-
 # End OpenACC
+
+# SYCL Part 
+sycl: main_sycl
+
+lib_sycl.o: $(SYCLFOLDER)lib_sycl.cpp
+	$(SYCL) -D$(DATATYPE) -D$(MODEL) -D$(DEVICETARGET) -DBLOCK_SIZE=$(BLOCKSIZE) -DSYCL -c $(SYCLFOLDER)lib_sycl.cpp -o $(SYCLFOLDER)lib_sycl.o $(CFLAGS) $(SYCLFLAGS)
+
+main_sycl: main.cpp lib_sycl.o cpu_functions.o 
+	mkdir -p $(OUTPUTFOLDER)
+	$(SYCL) -D$(DATATYPE) -D$(MODEL) -D$(DEVICETARGET) main.cpp $(SYCLFOLDER)lib_sycl.o $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_sycl_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(SYCLFLAGS)
+# End SYCL
 
 # Hip part
 hip: main_hip
@@ -257,6 +282,8 @@ main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o
 	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
 # End OpenACC optimized
 
+
+
 # Hip part
 hip-opt: main_hip_opt
 
@@ -303,6 +330,7 @@ clean:
 	rm -rf $(OPFOLDER)*.o
 	rm -rf $(OMPFOLDER)*.o
 	rm -rf $(ACCFOLDER)*.o
+	rm -rf $(SYCLFOLDER)*.o
 	rm -rf $(HIPFOLDER)*.o
 	rm -rf $(CUFOLDER)*.o
 	rm -rf $(OUTPUTFOLDER)$(TARGET)_*
