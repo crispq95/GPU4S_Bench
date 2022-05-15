@@ -16,8 +16,8 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 	bench_t value = 0;
 
 	const unsigned int squared_kernel_size = kernel_size * kernel_size;
-	
-	#pragma omp parallel for private(x, y, kx, ky, sum, value)
+
+	#pragma acc parallel loop present(A, B, kernel) firstprivate(x, y, kx, ky, sum, value)
 	for (unsigned int block = 0; block < n*n; ++block)
 	{
 		x = block/n;
@@ -28,7 +28,7 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 			value = 0;
 			kx = (k/kernel_size) - kernel_rad; 
 			ky = (k%kernel_size) - kernel_rad;
-			if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + yR > n - 1))
+			if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + y > n - 1))
 			{
 				value = A[(x + kx)*n+(y + ky)];
 			}
@@ -42,20 +42,10 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 void relu_kernel(const bench_t *A, bench_t *B, const int size)
 {
 	// Compute traditional relu approach 
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < size; ++i)
+	#pragma acc parallel loop present(A,B)
+	for (unsigned int i = 0; i < size*size; ++i)
 	{
-		for (unsigned int j = 0; j < size; ++j)
-		{
-			if (A[i*size+j] > 0)
-			{
-				B[i*size+j] = A[i*size+j];
-			}
-			else 
-			{
-				B[i*size+j] = 0;
-			}
-		}
+		B[i] = A[i] > 0 ? A[i] : 0;
 	}
 }
 
@@ -63,17 +53,10 @@ void relu_kernel(const bench_t *A, bench_t *B, const int size)
 void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 {
 	// Compute traditional relu approach 
-	#pragma omp parallel for
+	#pragma acc parallel loop present(A,B)
 	for (unsigned int i = 0; i < size; ++i)
 	{
-		if (A[i] > 0)
-		{
-			B[i] = A[i];
-		}
-		else 
-		{
-			B[i] = 0;
-		}
+		B[i] = A[i] > 0 ? A[i] : 0;
 	}
 }
 
@@ -81,13 +64,11 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsigned int stride,  const unsigned int lateral_stride)
 {	
 	bench_t max_value = 0;
-	#pragma parallel for
-	for (unsigned int i = 0; i < size; i+= stride)
-	{
-		for (unsigned int j = 0; j < size; j+= stride)
-		{
+	#pragma acc parallel loop collapse(2) firstprivate(max_value) present(B, A)
+	for (unsigned int i = 0; i < size; i+= stride){
+		for (unsigned int j = 0; j < size; j+= stride){
 			max_value = A[i*size+j];
-			#pragma parallel for reduction (max:max_value) collapse(2)
+			#pragma acc loop seq collapse(2) reduction(max:max_value)
 			for(unsigned int x = 0; x < stride; ++x)
 			{
 				for(unsigned int y = 0; y < stride; ++y)
@@ -103,20 +84,18 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 
 void lrn_kernel(const bench_t *A, bench_t *B, const int size)
 {
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < size; ++i)
-	{
-		for (unsigned int j = 0; j < size; ++j)
-		{
-			B[i*size+j] = A[i*size+j]/pow((K+ALPHA*pow(A[i*size+j],2)),BETA);
-		}
+	const unsigned int squared_size = size*size;
+	
+	#pragma acc parallel loop present(A,B)
+	for (unsigned int i = 0; i < squared_size; ++i){
+		B[i] = A[i]/pow((K+ALPHA*pow(A[i],2)),BETA);
 	}
 }
 
 
-void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, const int n, const int m, const int w)
-{
-	#pragma omp parallel for
+void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, unsigned int n, unsigned int m, unsigned int w)
+{	
+	#pragma acc parallel loop  present(A,B,C)
 	for (unsigned int i = 0; i < n; i++)
 	{
 		for (unsigned int j = 0; j < m; j++)
@@ -135,25 +114,20 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
 void softmax_kernel(const bench_t *A, bench_t *B, const int size)
 {	
 	bench_t sum_values = 0;
-	bench_t value = 0;
 
-	
-	#pragma omp parallel for reduction(+:sum_values)
+	#pragma acc parallel loop reduction(+:sum_values) present(A,B)
 	for (unsigned int i = 0; i < size; i++)
 	{
-		value = expf (A[i]);
-		sum_values += value;
-		B[i] = value;
+		B[i] = exp(A[i]);		
+		sum_values = sum_values + B[i];	
 	}
 
-	#pragma omp parallel for
+	#pragma acc parallel loop present(B)
 	for (unsigned int i = 0; i < size; i++)
 	{
 		B[i] = (B[i]/sum_values);
 	}
-
 }
-
 
 void init(GraficObject *device_object, char* device_name)
 {
@@ -170,6 +144,7 @@ void init(GraficObject *device_object, int platform ,int device, char* device_na
 
 bool device_memory_init(GraficObject *device_object, unsigned int input_data, unsigned int output_data, unsigned int kernel_1, unsigned int kernel_2, unsigned int stride_1, unsigned int stride_2, unsigned int neurons_dense_1, unsigned int neurons_dense_2, unsigned int number_of_images)
 {
+	
 	const unsigned int size_pooling_1 = input_data / stride_1;
     const unsigned int size_pooling_2 = size_pooling_1 / stride_2;
     const unsigned int weights_layer_1 = size_pooling_2 * size_pooling_2 * neurons_dense_1;
@@ -189,6 +164,7 @@ bool device_memory_init(GraficObject *device_object, unsigned int input_data, un
    	device_object->dense_layer_2_output = (bench_t*) malloc ( neurons_dense_2 * sizeof(bench_t));
    	// Output data
    	device_object->output_data = (bench_t*) malloc ( number_of_images * neurons_dense_2 * sizeof(bench_t));
+	
 	return true;
 }
 
@@ -211,6 +187,12 @@ void execute_kernel(GraficObject *device_object, unsigned int input_data, unsign
 	bench_t* aux_output_data = device_object->output_data;
     bench_t* aux_input_data = device_object->input_data;
 
+	#pragma acc enter data copyin(device_object[0:11])
+	{
+	#pragma acc enter data copyin(device_object->input_data[0:input_data*input_data], device_object->kernel_1[0:kernel_1]) \
+	create(device_object->conv_1_output[0:input_data*input_data])
+	{
+
 	for(unsigned int position = 0; position < number_of_images; ++position)
     {
 		aux_input_data = device_object->input_data + position * input_data * input_data;
@@ -218,7 +200,7 @@ void execute_kernel(GraficObject *device_object, unsigned int input_data, unsign
 	
 		// 1-1 Step convolution
 		convolution_kernel(aux_input_data, device_object->conv_1_output, device_object->kernel_1, input_data, input_data, input_data, kernel_1);
-
+		
 		// 1-2 Step activation
 		relu_kernel(device_object->conv_1_output, device_object->conv_1_output, input_data);
 		
@@ -256,6 +238,10 @@ void execute_kernel(GraficObject *device_object, unsigned int input_data, unsign
 
 		// Softmax - Output
 		softmax_kernel(device_object->dense_layer_2_output, aux_output_data, neurons_dense_2);
+	}
+
+	#pragma acc exit data copyout(device_object->output_data[0:neurons_dense_2]) 
+	}
 	}
 
 	// End compute timer

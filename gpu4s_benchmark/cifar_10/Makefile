@@ -20,6 +20,8 @@ OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/
 OMPFLAGS = -fopenmp -lm
 # OPENACC FLAGS
 ACCFLAGS = -acc=multicore -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
+# SYCL FLAGS 
+SYCLFLAGS = -fopenmp #quitar
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 
@@ -45,8 +47,6 @@ OMPFOLDER = ./openmp/
 ACCFOLDER = ./openacc/
 # SYCL FOLDER 
 SYCLFOLDER = ./sycl/
-# SYCL FLAGS 
-SYCLFLAGS = -fopenmp #quitar
 # HIP FOLDER
 HIPFOLDER = ./hip/
 # CPU FOLDER
@@ -241,12 +241,12 @@ main_openmp_opt: main.cpp lib_omp_opt.o cpu_functions.o
 openacc-opt:  main_openacc_opt
 
 lib_acc_opt.o: $(ACCFOLDER)lib_acc_opt.cpp 
-	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENMP -c $(ACCFOLDER)lib_acc_opt.cpp -o $(ACCFOLDER)lib_acc_opt.o $(CFLAGS) $(ACCFLAGS)
+	$(NVC) -D$(DATATYPE) -DBLOCK_SIZE=$(BLOCKSIZE) -DOPENACC -c $(ACCFOLDER)lib_acc_opt.cpp -o $(ACCFOLDER)lib_acc_opt.o $(CFLAGS) $(ACCFLAGS)
 
-main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o
+main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o 
 	mkdir -p $(OUTPUTFOLDER) 
-	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
-# End OpenACC optimized
+	$(NVC) -D$(DATATYPE) -DOPENACC main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
+# End OpenACC optimized 
 
 # SYCL Part 
 sycl-opt: main_sycl_opt

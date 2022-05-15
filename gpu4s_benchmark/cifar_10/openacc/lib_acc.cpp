@@ -83,19 +83,17 @@ void max_pooling_kernel(const bench_t *restrict A, bench_t *restrict B, const in
 	#pragma acc parallel loop firstprivate(max_value,blockx, blocky, block_zero, x, y) present(B, A)
 	for (unsigned int block = 0; block < block_size*block_size; ++block)
 	{
+		blockx = block%block_size;
+		blocky = block/block_size;
+		block_zero = blockx*stride + blocky*stride*size;
+		max_value = A[block_zero];
+		for(unsigned int i = 0; i < stride_squared; ++i)
 		{
-			blockx = block%block_size;
-			blocky = block/block_size;
-			block_zero = blockx*stride + blocky*stride*size;
-			max_value = A[block_zero];
-			for(unsigned int i = 0; i < stride_squared; ++i)
-			{
-				x = i%stride;
-				y = i/stride; 
-				max_value = max(max_value, A[(block_zero+x) + y*size]);
-			}
-			B[block] = max_value;	
+			x = i%stride;
+			y = i/stride; 
+			max_value = max(max_value, A[(block_zero+x) + y*size]);
 		}
+		B[block] = max_value;	
 	}
 }
 
@@ -214,7 +212,6 @@ void execute_kernel(GraficObject *device_object, unsigned int input_data, unsign
 		//enter data 176s
 	#pragma acc enter data copyin(device_object[0:11])
 	{
-
 	#pragma acc enter data copyin(device_object->input_data[0:input_data*input_data], device_object->kernel_1[0:kernel_1]) \
 	create(device_object->conv_1_output[0:input_data*input_data])
 	{
