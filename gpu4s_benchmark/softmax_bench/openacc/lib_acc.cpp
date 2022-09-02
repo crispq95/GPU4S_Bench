@@ -30,35 +30,32 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
-	const double start_wtime = omp_get_wtime();
 	
 	bench_t sum_values = 0;
 	
 	#pragma acc enter data copyin(device_object[0:2])
-	{
-	#pragma acc enter data copyin(device_object->d_A[0:n*n],device_object->d_B[0:n*n])
-	{
-	#pragma acc parallel loop reduction(+:sum_values) present(device_object, device_object->d_B, device_object->d_A)
+	#pragma acc enter data copyin(device_object->d_A[0:n*n]) create(device_object->d_B[0:n*n])
+
+	const double start_wtime = omp_get_wtime();
+	#pragma acc parallel loop reduction(+:sum_values) present(device_object[0:2], device_object->d_B[0:n*n], device_object->d_A[0:n*n]) 
 	for (unsigned int i = 0; i < n; ++i){
 		for (unsigned int j = 0; j < n; ++j){			
-			device_object->d_B[i*n+j] = exp (device_object->d_A[i*n+j]);
+			device_object->d_B[i*n+j] = exp(device_object->d_A[i*n+j]);
 			sum_values += device_object->d_B[i*n+j];
 		}
 	}
 
-	#pragma acc parallel loop  present(device_object, device_object->d_B)
+	#pragma acc parallel loop present(device_object[0:2], device_object->d_B[0:n*n])
 	for (unsigned int i = 0; i < n; ++i){
 		for (unsigned int j = 0; j < n; ++j){
 			device_object->d_B[i*n+j] = (device_object->d_B[i*n+j]/sum_values);
 		}
 	}
+	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 
-	}
-	#pragma acc exit data copyout(device_object->d_B[0:n*n])
-	}	//enter data
+	#pragma acc exit data copyout(device_object->d_B[0:n*n]) delete(device_object[0:2], device_object->d_A[0:n*n])
 	
 	// End compute timer
-	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 }
 
 
