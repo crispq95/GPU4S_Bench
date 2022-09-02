@@ -25,6 +25,8 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
 {
 	device_object->d_A = h_A;
+	#pragma acc enter data copyin(device_object[0:2])
+	#pragma acc enter data copyin(device_object->d_A[0:size_a]) 
 }
 
 
@@ -35,7 +37,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	const unsigned int squared_size = n*n;
 	
-	#pragma acc parallel loop
+	#pragma acc parallel loop present(device_object[0:2], device_object->d_A[0:n*n], device_object->d_B[0:n*n])
 	for (unsigned int i = 0; i < squared_size; ++i){
 		device_object->d_B[i] = device_object->d_A[i]/pow((K+ALPHA*pow(device_object->d_A[i],2)),BETA);
 	}
@@ -47,6 +49,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 {	     
+	#pragma acc exit data copyout(device_object->d_B[0:size]) delete(device_object->d_B[0:size], device_object->d_A[0:size], device_object[0:2])
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size);
 }
 

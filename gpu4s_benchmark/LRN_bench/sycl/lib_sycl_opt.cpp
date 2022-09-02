@@ -55,7 +55,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	   .parallel_for<LRN_bench_kernel>(
 			sycl::range{n*n}, 
 			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<1> idx){
-					d_B_local[idx] = d_A_local[idx]/pow((K+ALPHA*pow(d_A_local[idx],2)),BETA);
+					d_B_local[idx] = d_A_local[idx]/sycl::powr((K+ALPHA*powf(d_A_local[idx],2)),BETA);
 			}).wait();
 	#else 
 	try {
@@ -63,14 +63,22 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 		auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*n}};
 		auto buffB = sycl::buffer{device_object->d_B, sycl::range{n*n}};
 
+		sycl::range<3> dimBlock(1, 1, BLOCK_SIZE);
+    	sycl::range<3> dimGrid(1, 1, ceil(float(((n*n)+BLOCK_SIZE-1))/(BLOCK_SIZE)));
+		
 		auto e = myQueue.submit([&](sycl::handler& cgh){
+			
+		// sycl::range<3> dimGridColumn(1, 1, ceil(float((n+BLOCK_SIZE-1))/(BLOCK_SIZE.x)));
+		
 			//create accessors 
 			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 			
 			cgh.parallel_for<LRN_bench_kernel>(
-				sycl::range<1>{n*n}, [=](sycl::id<1> idx){
-				accB[idx] = accA[idx]/pow((K+ALPHA*pow(accA[idx],2)),BETA);
+				sycl::nd_range<3>{dimGrid*dimBlock,dimBlock}, [=](sycl::nd_item<3> idx){ 
+				int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
+
+				accB[i] = accA[i]/sycl::pow((K+ALPHA*powf(accA[i],2)),BETA);
 			});	
 		}); 
 

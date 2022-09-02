@@ -92,8 +92,8 @@ struct GraficObject{
 	// OpenACC part 
 	bench_t* d_A;
 	bench_t* d_B;
-	float elapsed_time_HtD;
-	float elapsed_time_DtH;
+	// float elapsed_time_HtD;
+	// float elapsed_time_DtH;
 	#elif SYCL
 	bench_t* d_A;
 	bench_t* d_B;

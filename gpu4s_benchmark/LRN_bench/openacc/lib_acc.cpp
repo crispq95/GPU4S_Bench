@@ -27,9 +27,11 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
 {
-	
+	const double start_wtime = omp_get_wtime();
 	device_object->d_A = h_A;  
-	
+	#pragma acc enter data copyin(device_object[0:2])
+	#pragma acc enter data copyin(device_object->d_A[0:size_a])  
+	device_object->elapsed_time_HtD = omp_get_wtime() - start_wtime;
 }
 
 
@@ -38,24 +40,19 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 
-	#pragma acc enter data copyin(device_object[0:2])
-	{
-	#pragma acc enter data copyin(device_object->d_A[0:n*n]) create(device_object->d_B[0:n*n]) 
-	#pragma acc data copyin(device_object[:2], device_object->d_A[:n*n]) copyout(device_object->d_B[0:n*n])
-	{
-	#pragma acc parallel loop 
+	// #pragma acc enter data copyin(device_object[0:2])
+	// {
+	// #pragma acc enter data copyin(device_object->d_A[0:n*n]) create(device_object->d_B[0:n*n]) 
+	#pragma acc data create(device_object->d_B[0:n*n])
+	#pragma acc parallel loop collapse(2)
 	for (unsigned int i = 0; i < n; ++i){
 		for (unsigned int j = 0; j < n; ++j){
 			device_object->d_B[i*n+j] = device_object->d_A[i*n+j]/pow((K+ALPHA*pow(device_object->d_A[i*n+j],2)),BETA);
 		}
 	}
-	}
 	
-	#pragma acc exit data copyout(device_object->d_B[0:n*n])
-	}
 	
-		//if(i==0)
-		//	printf("%d\n",acc_on_device(acc_device_host));
+	// }
 	
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
@@ -64,9 +61,9 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 {	    
-	//const double start_wtime = omp_get_wtime();
-	
-	//device_object->elapsed_time_DtH = omp_get_wtime() - start_wtime;
+	const double start_wtime = omp_get_wtime();
+	#pragma acc exit data copyout(device_object->d_B[0:size]) delete(device_object->d_B[0:size], device_object->d_A[0:size], device_object[0:2])
+	device_object->elapsed_time_DtH = omp_get_wtime() - start_wtime;
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size); 
 	
 }
@@ -81,7 +78,6 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
 	{
         printf("%.10f;%.10f;%.10f;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0);
     } 
-	else
 	{
 		printf("Elapsed time Host->Device: %.10f milliseconds\n", device_object->elapsed_time_HtD* 1000.f);
 		printf("Elapsed time kernel: %.10f milliseconds\n", device_object->elapsed_time * 1000.f);

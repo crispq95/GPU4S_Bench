@@ -2,6 +2,10 @@
 #include <cstring>
 #include <cmath>
 
+#include <omp.h>
+
+class LRN_bench_kernel;
+
 void init(GraficObject *device_object, char* device_name)
 {
 	init(device_object, 0,0, device_name);
@@ -10,6 +14,7 @@ void init(GraficObject *device_object, char* device_name)
 
 void init(GraficObject *device_object, int platform ,int device, char* device_name)
 {
+	// TBD Feature: device name. -- Bulky generic platform implementation
 	std :: cout << "Using device: " << myQueue.get_device().get_info<sycl::info::device::name>() << "\n";
 }
 
@@ -22,18 +27,24 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 	device_object->d_B = (bench_t*) malloc ( size_b_matrix * sizeof(bench_t*));
 	#endif
 
-   	return true;
-}
+	return true;
+} 
 
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
 {
+	const double start_wtime = omp_get_wtime();
+	
+	
 	#ifdef USM
 	device_object->d_A = sycl::malloc_device<bench_t>(size_a, myQueue);
 	myQueue.memcpy(device_object->d_A, h_A, (size_a)*sizeof(bench_t)).wait();
 	#else
 	device_object->d_A = h_A;
 	#endif
+
+	device_object->elapsed_time_HtD = omp_get_wtime() - start_wtime;
+	
 }
 
 
@@ -41,20 +52,17 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
-
-	const unsigned int squared_size = n*n;
 	
 	#ifdef USM
 	myQueue
-	   .parallel_for<class LRN_bench_kernel>(
-			sycl::range<2>{n,n}, 
-			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<2> idx){
-					int row = idx[0], col= idx[1];
-					//test this
-					d_B_local[row*n+col] = d_A_local[row*n+col]/pow((K+ALPHA*pow(d_A_local[row*n+col],2)),BETA);
+	   .parallel_for<LRN_bench_kernel>(
+			sycl::range{n*n}, 
+			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<1> idx){
+
+				d_B_local[idx] = d_A_local[idx]/sycl::powr((K+ALPHA*powf(d_A_local[idx[0]],2)), BETA);
 			}).wait();
 	#else 
-		try {
+	try {
 		// //create buffers 
 		auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*n}};
 		auto buffB = sycl::buffer{device_object->d_B, sycl::range{n*n}};
@@ -64,17 +72,20 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 			
-			
-			cgh.parallel_for<class LRN_bench_kernel>(sycl::range<2>{n,n}, [=](sycl::id<2> idx){
-				int row = idx[0], col= idx[1];
-				accB[row*n+col] = accA[row*n+col]/pow((K+ALPHA*pow(accA[row*n+col],2)),BETA);
-			});	
-		}); 
+			cgh.parallel_for<LRN_bench_kernel>(
+				sycl::range<1>{n*n}, [=](sycl::id<1> idx){ 
+				bench_t sum = 0.0;
 
+				accB[idx] = accA[idx]/sycl::powr((K+ALPHA*powf(accA[idx],2)),BETA);
+
+			});	//end parallel_for
+		}); //end submit
+ 
 		e.wait();
 		}catch (const sycl::exception& e) {
         	std::cout << "Exception caught: " << e.what() << std::endl;
     	}
+
 	#endif
 
 	// End compute timer
@@ -83,19 +94,23 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
-{	     
+{	    
+
 	const double start_wtime = omp_get_wtime();
 	#ifdef USM
 	myQueue.memcpy(h_C, device_object->d_B, (size)*sizeof(bench_t)).wait();
 	#else
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size);
 	#endif
+
+	device_object->elapsed_time_DtH = omp_get_wtime() - start_wtime;
+	
 }
 
 
 float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_format_timestamp, long int current_time)
 {
-	if (csv_format_timestamp){
+	if (csv_format_timestamp){ 
         printf("%.10f;%.10f;%.10f;%ld;\n", (bench_t) 0, device_object->elapsed_time * 1000.f, (bench_t) 0, current_time);
     }
     else if (csv_format)
@@ -104,9 +119,9 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
     } 
 	else
 	{
-		printf("Elapsed time Host->Device: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Host->Device: %.10f milliseconds\n", device_object->elapsed_time_HtD* 1000.f);
 		printf("Elapsed time kernel: %.10f milliseconds\n", device_object->elapsed_time * 1000.f);
-		printf("Elapsed time Device->Host: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Device->Host: %.10f milliseconds\n", device_object->elapsed_time_DtH * 1000.f);
     }
 	return device_object->elapsed_time * 1000.f;
 }
@@ -120,4 +135,5 @@ void clean(GraficObject *device_object)
 	#else
 	free(device_object->d_B);
 	#endif
+
 }
