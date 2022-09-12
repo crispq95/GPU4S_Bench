@@ -2,6 +2,7 @@
 #include <cstring>
 
 
+
 void init(GraficObject *device_object, char* device_name){
 	init(device_object, 0,0, device_name);
 }
@@ -38,12 +39,24 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* h
 	#endif
 }
 
+void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, const int n, const int m, const int w, sycl::id<2> idx)
+{
+	int i = idx[0], j = idx[1]; 
+
+    if (i < n && j < w){
+        bench_t acumulated = 0;
+        for (unsigned int k_d = 0; k_d < m; ++k_d )
+        {
+            acumulated += A[i*n+k_d] * B[k_d*w +j];
+        }
+        C[i*n+j] =  acumulated;
+    }
+}
 
 void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
-	
 	// Compute traditional matrix multiplication approach 
 	#ifdef USM
 	myQueue
@@ -51,23 +64,17 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 			sycl::range<2>{n,w}, 
 			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B,	d_C_local=device_object->d_C]\
 			(sycl::id<2> idx){
-				int row = idx[0], col = idx[1]; 
-				bench_t sum = 0.0;
-
-				for (unsigned int k = 0; k < m; k++){  
-					sum +=  d_A_local[row*n+k] * d_B_local[k*w+col];
-				}
-				d_C_local[row*n+col] = sum; 
+				matrix_multiplication_kernel(d_A_local, d_B_local, d_C_local, n, m, w, idx); 
 		}).wait();
 
 	#else 
 	try {
-		// //create buffers 
+		//create buffers 
 		auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*m}};
 		auto buffB = sycl::buffer{device_object->d_B, sycl::range{w*m}};
 		auto buffC = sycl::buffer{device_object->d_C, sycl::range{n*w}};
 
-		auto e = myQueue.submit([&](sycl::handler& cgh){
+		myQueue.submit([&](sycl::handler& cgh){
 			//create accessors 
 			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 			auto accB = buffB.get_access<sycl::access::mode::read>(cgh);
@@ -75,18 +82,9 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 			
 			cgh.parallel_for<class mat_mult>(
 				sycl::range<2>{n,w}, [=](sycl::id<2> idx){
-				int row = idx[0], col = idx[1]; 
-				bench_t sum = 0.0;
-
-				for (unsigned int k = 0; k < m; k++){  
-					sum +=  accA[row*n+k]* accB[k*w+col]; 
-				}
-				accC[row*n+col] = sum; 
-
+				matrix_multiplication_kernel(accA.get_pointer(), accB.get_pointer(), accC.get_pointer(), n, m, w, idx); 
 			});	//end parallel_for
-		}); //end submit
-
-		e.wait();
+		}).wait(); //end submit
 
 	}catch (const sycl::exception& e) {
         std::cout << "Exception caught: " << e.what() << std::endl;
@@ -103,9 +101,9 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 	#ifdef USM  
 	myQueue.memcpy(h_C, device_object->d_C, (size)*sizeof(bench_t)).wait();
 	#else
-	 // todo
 	memcpy(h_C, &device_object->d_C[0], sizeof(bench_t)*size);
 	#endif
+	printf("h_C[0]=%f\n", h_C[0]); 
 }
 
 
@@ -119,9 +117,9 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
     } 
 	else
 	{
-		//printf("Elapsed time Host->Device: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Host->Device: %.10f milliseconds\n", (bench_t) 0);
 		printf("Elapsed time kernel: %.10f milliseconds\n", device_object->elapsed_time * 1000.f);
-		//printf("Elapsed time Device->Host: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Device->Host: %.10f milliseconds\n", (bench_t) 0);
     }
     return device_object->elapsed_time * 1000.f;
 }

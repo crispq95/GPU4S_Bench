@@ -22,7 +22,6 @@ void init(GraficObject *device_object, int platform, int device, char* device_na
 
 bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix, unsigned int size_b_matrix)
 {
-	printf("init\n");
 	#ifdef USM
 	device_object->d_B = sycl::malloc_device<bench_t>(size_b_matrix, myQueue);
 	#else 
@@ -34,14 +33,12 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned int size_a)
 {
-	printf("HtD\n");
 	#ifdef USM
 	device_object->d_A = sycl::malloc_device<bench_t>(size_a, myQueue);
 	myQueue.memcpy(device_object->d_A, h_A, size_a*sizeof(bench_t));
 	#else 
 	device_object->d_A = h_A;
 	#endif
-
 }
 
 void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w, unsigned int stride, unsigned int lateral_stride)
@@ -54,23 +51,6 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	
 
 	#ifdef USM
-	// myQueue
-	//    .parallel_for<class max_pooling>(
-	// 		sycl::range<2>{n,n},
-	// 		 [=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<2> idx)  {
-	// 			int i = idx[0], j=idx[1];
-	// 			if (i < n && j < n){
-	// 			bench_t max_value = d_A_local[((i * stride)) * n + ((j*stride))];
-
-	// 			for(unsigned int x = 0; x < stride; ++x)
-    //        			for(unsigned int y = 0; y < stride; ++y){
-	// 					max_value = max(max_value, d_A_local[((i * stride) + x) * n + ((j*stride) +y)]);
-	// 				}
-	// 			d_B_local[i * lateral_stride + j ] = max_value;
-	// 			}
-	// 	}).wait();
-	// #else 
-
 	myQueue
 	   .parallel_for<class max_pooling_kernel>(
 			sycl::range{block_size*block_size},
@@ -92,10 +72,9 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 				d_B_local[idx] = max_value;
 		}).wait();
 	#else 
-	
-	try {
+	try {	
 		// //create buffers 
-		auto buffA = sycl::buffer{device_object->d_A, sycl::range{block_size*block_size}};
+		auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*n}};
 		auto buffB = sycl::buffer{device_object->d_B, sycl::range{block_size*block_size}};
 
 		auto e = myQueue.submit([&](sycl::handler& cgh){
@@ -118,7 +97,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 				{
 					x = i%stride;
 					y = i/stride; 
-					max_value = max(max_value, accA[(block_zero+x) + y*n]);
+					max_value = max(max_value, accA[(block_zero+x) + y*n]);	
 				}
 				accB[i] = max_value;	
 
@@ -129,22 +108,6 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	}catch (const sycl::exception& e) {
 		std::cout << "Exception caught: " << e.what() << std::endl;
 	}
-	//TODO
-	// for (unsigned int block = 0; block < block_size*block_size; ++block)
-	// {
-	// 	blockx = block%block_size;
-	// 	blocky = block/block_size;
-	// 	block_zero = blockx*stride + blocky*stride*n;
-	// 	max_value = device_object->d_A[block_zero];	
-		
-	// 	for(unsigned int i = 0; i < stride_squared; ++i)
-	// 	{
-	// 		x = i%stride;
-	// 		y = i/stride; 
-	// 		max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
-	// 	}
-	// 	device_object->d_B[block] = max_value;	
-	// }
 	#endif
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
@@ -183,8 +146,8 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
 void clean(GraficObject *device_object)
 {
 	#ifdef USM
-	// sycl::free(device_object->d_B, myQueue);
-	// sycl::free(device_object->d_A, myQueue);
+	sycl::free(device_object->d_B, myQueue);
+	sycl::free(device_object->d_A, myQueue);
 	#else 
 	free(device_object->d_B);
 	#endif

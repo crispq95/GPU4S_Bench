@@ -3,7 +3,7 @@
 CC = g++
 NVCC = /usr/local/cuda/bin/nvcc
 NVC = /opt/nvidia/hpc_sdk/Linux_x86_64/22.2/compilers/bin/nvc++ 
-SYCL = dpcpp
+SYCL = /home/cperalta/sycl_workspace/llvm/build/bin/clang++ 
 HIP = /opt/rocm/hip/bin/hipcc
 # the build target executable:
 TARGET = matrix_multiplication
@@ -24,7 +24,7 @@ OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp
 # OPENACC FLAGS
 ACCFLAGS =  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # SYCL FLAGS 
-SYCLFLAGS = -fopenmp #quitar
+SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 # OPENBLAS INCLUDE
@@ -133,6 +133,7 @@ OpenACC-lib: openacc-lib
 .PHONY: SYCL-lib
 SYCL-lib: sycl-lib
 # End Shortcuts
+
 # CPU FUNCTIONS part
 
 cpu_functions.o: $(CPUFUNCTIONFOLDER)cpu_functions.cpp

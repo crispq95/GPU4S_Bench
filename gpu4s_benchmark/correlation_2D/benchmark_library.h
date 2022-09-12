@@ -35,10 +35,18 @@ static const char type_kernel[] = "#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 // OpenACC lib
 #include <omp.h>
 #include <openacc.h>
+#elif SYCL
+// SYCL lib 
+#if __has_include(<SYCL/sycl.hpp>)
+#include <SYCL/sycl.hpp>
+#else
+#include <CL/sycl.hpp>
+#endif
+#include <omp.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
-#else
+// #else
 // CPU LIB
 #endif
 
@@ -107,6 +115,18 @@ struct GraficObject{
 	result_bench_t acumulate_value_a_b; // auxiliar values for the acumulation
 	result_bench_t acumulate_value_a_a; // auxiliar values for the acumulation
 	result_bench_t acumulate_value_b_b; // auxiliar values for the acumulation
+
+	#elif SYCL
+	// SYCL part
+	bench_t* d_A;
+	bench_t* d_B;
+	result_bench_t d_R;
+	result_bench_t *mean_A; // axuliar values for the mean of matrix A
+	result_bench_t *mean_B; // axuliar values for the mean of matrix B
+	result_bench_t *acumulate_value_a_b; // auxiliar values for the acumulation
+	result_bench_t *acumulate_value_a_a; // auxiliar values for the acumulation
+	result_bench_t *acumulate_value_b_b; // auxiliar values for the acumulation
+
 	#elif HIP
 	// Hip part --
 	bench_t* d_A;
@@ -124,7 +144,6 @@ struct GraficObject{
 	hipEvent_t *start;
 	hipEvent_t *stop;
 	#else
-	// OpenMP part
 	bench_t* d_A;
 	bench_t* d_B;
 	result_bench_t d_R;
@@ -135,7 +154,31 @@ struct GraficObject{
 	result_bench_t acumulate_value_b_b; // auxiliar values for the acumulation
 	#endif
 	float elapsed_time;
+	float elapsed_time2;
 };
+
+#ifdef SYCL
+class my_device_selector : public sycl::device_selector {
+	public:
+	int operator()(const sycl::device& dev) const override {
+		#ifdef GPU
+		if ( dev.has(sycl::aspect::gpu)) {
+			return 1;
+		}else {
+			return -1;
+		}
+		#else
+		if ( dev.has(sycl::aspect::cpu)) {
+			return 1;
+		}else {
+			return -1; 
+		}
+		#endif
+		return -1;	
+	}
+};
+auto myQueue = sycl::queue{my_device_selector{}};
+#endif
 
 void init(GraficObject *device_object, char* device_name);
 void init(GraficObject *device_object, int platform, int device, char* device_name);

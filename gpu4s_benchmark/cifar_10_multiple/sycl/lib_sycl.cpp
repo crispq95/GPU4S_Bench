@@ -12,13 +12,12 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 {
 	const unsigned int squared_kernel_size = kernel_size * kernel_size;
 	const int kernel_rad = kernel_size / 2;
-
+	const unsigned k_size_n = n; 
+	
 	#ifdef USM
 	const unsigned k_size = n*n; 
 	myQueue
-	   .parallel_for<class mat_mult_USM>(
-			sycl::range<1>{k_size}, 
-			[=]	(sycl::id<1> idx){
+	   .parallel_for<class mat_mult_USM>(sycl::range<1>{k_size}, [=] (sycl::id<1> idx){
 				int block = idx[0]; 
 				int x, y, kx, ky = 0;
 				bench_t sum = 0;
@@ -37,12 +36,13 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 					sum += value * kernel[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
 				}
 				B[x*n+y] = sum;
+				
 		}).wait();
 	#else
 	{
 	sycl::buffer<bench_t> buffA(A, (n*n));
 	sycl::buffer<bench_t> buffB(B, (n*n));
-	sycl::buffer<bench_t> buffKernel(A, (n*n));
+	sycl::buffer<bench_t> buffKernel(kernel, (kernel_size*kernel_size));
 
 	auto e = myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
@@ -71,12 +71,13 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 				sum += value * accKernel[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
 			}
 			accB[x*n+y] = sum;
-
+    
 			});
 	});
 	e.wait(); 
-	}
-	#endif
+    }
+	
+	#endif 
 }
 
 
@@ -95,7 +96,8 @@ void relu_kernel(const bench_t *A, bench_t *B, const int size)
 				else 
 					B[i*size+j] = 0;
 		}).wait();
-	#else
+
+    #else
 	{
 	sycl::buffer<bench_t> buffA(A, (size*size));
 	sycl::buffer<bench_t> buffB(B, (size*size));
@@ -120,7 +122,7 @@ void relu_kernel(const bench_t *A, bench_t *B, const int size)
 	});
 	e.wait(); 
 	}
-	#endif
+	#endif 
 }
 
 
@@ -139,6 +141,7 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 			else 
 				B[i] = 0;
 	}).wait();
+	
 	#else
 	{
 	sycl::buffer<bench_t> buffA(A, (size));
@@ -169,6 +172,7 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 
 void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsigned int stride,  const unsigned int lateral_stride)
 {	
+	
 	const unsigned int block_size = size/stride;
 	const unsigned int stride_squared = stride*stride;
 
@@ -195,17 +199,18 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 			B[block] = max_value;	
 	}).wait();
 
+
 	#else
 	{
-	sycl::buffer<bench_t> buffA(A, (size));
-	sycl::buffer<bench_t> buffB(B, (size));
+	sycl::buffer<bench_t> buffA(A, (size*size));
+	sycl::buffer<bench_t> buffB(B, (block_size*block_size));
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
+	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 		
-		const unsigned int s = size;  // REVISAR !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		const unsigned int s = block_size*block_size;  // REVISAR !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 		cgh.parallel_for<class max_pooling_kernel_AB>(
 			sycl::range<1>{s}, [=](sycl::id<1> idx){
@@ -216,7 +221,7 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 				blockx = block%block_size;
 				blocky = block/block_size;
 				block_zero = blockx*stride + blocky*stride*size;
-				max_value = A[block_zero];		
+				max_value = accA[block_zero];		
 
 				for(unsigned int i = 0; i < stride_squared; ++i)
 				{
@@ -226,30 +231,29 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 				}
 				accB[block] = max_value;
 			});
-	});
-	e.wait(); 
+	}).wait(); 
+	
 	}
 	#endif
 }
-
 
 void lrn_kernel(const bench_t *A, bench_t *B, const int size)
 {
 	#ifdef USM
 	const unsigned int s = size;
-
 	myQueue
 	   .parallel_for<class lrn_kernel_USM>(
 			sycl::range<2>{s,s}, 
 			[=]	(sycl::id<2> idx){
 			int i = idx[0], j = idx[1];
 
-			B[i*size+j] = A[i*size+j]/pow((K+ALPHA*pow(A[i*size+j],2)),BETA);
+			B[i*size+j] = A[i*size+j]/sycl::powr((K+ALPHA*powf(A[i*size+j],2)),BETA);
 	}).wait();
+
 	#else
 	{
-	sycl::buffer<bench_t> buffA(A, (size));
-	sycl::buffer<bench_t> buffB(B, (size));
+	sycl::buffer<bench_t> buffA(A, (size*size));
+	sycl::buffer<bench_t> buffB(B, (size*size));
 
 	auto e = myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
@@ -262,7 +266,7 @@ void lrn_kernel(const bench_t *A, bench_t *B, const int size)
 			sycl::range<2>{s, s}, [=](sycl::id<2> idx){
 				int i = idx[0], j = idx[1]; 
 
-				accB[i*size+j] = accA[i*size+j]/pow((K+ALPHA*pow(accA[i*size+j],2)),BETA);
+				accB[i*size+j] = accA[i*size+j]/sycl::powr((K+ALPHA*powf(accA[i*size+j],2)),BETA);
 			});
 	});
 	e.wait(); 
@@ -270,9 +274,9 @@ void lrn_kernel(const bench_t *A, bench_t *B, const int size)
 	#endif
 }
 
-
-void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, const int n, const int m, const int w)
+void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, unsigned int n, unsigned int m, unsigned int w)
 {
+
 	#ifdef USM
 	const unsigned int c_n = n, c_m = m; 
 
@@ -289,12 +293,13 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
 			}
 			C[i*m+j] = acumulated;
 	}).wait();
+
 	#else
 	{
 
-	sycl::buffer<bench_t> buffA(A, (n*m));
-	sycl::buffer<bench_t> buffB(B, (w*m));
-	sycl::buffer<bench_t> buffC(C, (n*n));
+	auto buffA = sycl::buffer{A, sycl::range{n*w}};
+	auto buffB = sycl::buffer{B, sycl::range{w*m}};
+	auto buffC = sycl::buffer{C, sycl::range{n*m}};
 
 	auto e = myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
@@ -311,8 +316,8 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
 
 			if (row < c_n && col < c_m)
 			{
-			for (unsigned int k = 0; k < m; k++){  
-				sum +=  accA[row*n+k]* accB[k*w+col]; 
+			for (unsigned int k = 0; k < w; k++){  
+				sum +=  accA[row*w+k]* accB[k*m+col]; 
 			}
 		    accC[row*m+col] = sum; 
 			}
@@ -328,24 +333,71 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
 
 void softmax_kernel(const bench_t *A, bench_t *B, const int size)
 {	
-	bench_t sum_values = 0;
-	bench_t value = 0;
+    
+	#ifdef USM
+    unsigned long s = size;
+	bench_t *sum_values = sycl::malloc_device<bench_t>(1, myQueue);
 
-	
-	#pragma omp parallel for reduction(+:sum_values)
-	for (unsigned int i = 0; i < size; i++)
+    bench_t a = 0; 
+    
+    myQueue.memcpy(sum_values, &a, 1*sizeof(bench_t)).wait(); 
+    
+    myQueue
+	   .parallel_for<class reduction_kernel>(
+			sycl::range<1>{s}, 
+			[=]	(sycl::id<1> idx){
+                
+            B[idx] = sycl::exp(A[idx]);
+            sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space> (*sum_values) += B[idx];
+        }).wait();
+    
+     myQueue
+	   .parallel_for<class sm_kernel>(
+			sycl::range<1>{s}, 
+			[=]	(sycl::id<1> idx){
+            
+            B[idx] = (B[idx]/ *sum_values);
+        }).wait(); 
+    
+    sycl::free(sum_values, myQueue);
+
+	#else
+
+    unsigned int n = size; 
+    bench_t sum_values = 0;
 	{
-		value = expf (A[i]);
-		sum_values += value;
-		B[i] = value;
-	}
+	sycl::buffer<bench_t> counter_buf(&sum_values, 1);
+	sycl::buffer<bench_t> buffA(A, (n));
+	sycl::buffer<bench_t> buffB(B, (n));
 
-	#pragma omp parallel for
-	for (unsigned int i = 0; i < size; i++)
-	{
-		B[i] = (B[i]/sum_values);
-	}
+    myQueue.submit([&](sycl::handler& cgh) {
+		auto atomic_buf = counter_buf.get_access<sycl::access::mode::read_write>(cgh);
+		sycl::accessor<bench_t> a_bA(buffA, cgh);
+		sycl::accessor<bench_t> a_bB(buffB, cgh);
 
+		cgh.parallel_for<class reduction_kernel>(sycl::range<1>{n}, 
+		[=](sycl::id<1> idx){
+			sycl::atomic_ref<float, sycl::memory_order::relaxed, sycl::memory_scope::device,
+			sycl::access::address_space::global_space> ao (atomic_buf[0]);
+
+			a_bB[idx] = sycl::exp(a_bA[idx]);
+			ao += a_bB[idx];
+		});
+    }).wait();
+
+	myQueue.submit([&](sycl::handler& cgh) {
+		sycl::accessor<bench_t> a_bB(buffB, cgh);
+		auto atomic_buf = counter_buf.get_access<sycl::access::mode::read_write>(cgh);
+
+		cgh.parallel_for<class sm_kernel>(sycl::range<1>{n}, 
+		[=](sycl::id<1> idx){
+			a_bB[idx] = a_bB[idx]/atomic_buf[0];
+
+		});
+	}).wait();
+    }
+    
+	#endif
 }
 
 
@@ -399,15 +451,15 @@ bool device_memory_init(GraficObject *device_object, unsigned int input_data, un
 void copy_memory_to_device(GraficObject *device_object, bench_t* input_data, bench_t* kernel_1_data, bench_t* kernel_2_data, bench_t* weights_1 ,bench_t* weights_2,unsigned int input , unsigned int kernel_size_1, unsigned int kernel_size_2, unsigned int weights_1_size, unsigned int weights_2_size, unsigned int number_of_images)
 {
 	#ifdef USM
-	device_object->input_data = sycl::malloc_device<bench_t>(input, myQueue);
-	device_object->kernel_1 = sycl::malloc_device<bench_t>(kernel_size_1, myQueue);
-	device_object->kernel_2 = sycl::malloc_device<bench_t>(kernel_size_2, myQueue);
+	device_object->input_data = sycl::malloc_device<bench_t>(input*input, myQueue);
+	device_object->kernel_1 = sycl::malloc_device<bench_t>(kernel_size_1*kernel_size_1, myQueue);
+	device_object->kernel_2 = sycl::malloc_device<bench_t>(kernel_size_2*kernel_size_2, myQueue);
 	device_object->dense_layer_1_weights = sycl::malloc_device<bench_t>(weights_1_size, myQueue);
 	device_object->dense_layer_2_weights = sycl::malloc_device<bench_t>(weights_2_size, myQueue);
 
-	myQueue.memcpy(device_object->input_data, input_data, input*sizeof(bench_t)); 
-	myQueue.memcpy(device_object->kernel_1, kernel_1_data, kernel_size_1*sizeof(bench_t));
-	myQueue.memcpy(device_object->kernel_2, kernel_2_data, kernel_size_2*sizeof(bench_t));
+	myQueue.memcpy(device_object->input_data, input_data, input*input*sizeof(bench_t)); 
+	myQueue.memcpy(device_object->kernel_1, kernel_1_data, kernel_size_1*kernel_size_1*sizeof(bench_t));
+	myQueue.memcpy(device_object->kernel_2, kernel_2_data, kernel_size_2*kernel_size_2*sizeof(bench_t));
 	myQueue.memcpy(device_object->dense_layer_1_weights, weights_1, weights_1_size*sizeof(bench_t));
 	myQueue.memcpy(device_object->dense_layer_2_weights, weights_2, weights_2_size*sizeof(bench_t));
 	#else 

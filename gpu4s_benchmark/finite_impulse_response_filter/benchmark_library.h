@@ -28,6 +28,14 @@ static const std::string type_kernel = "#pragma OPENCL EXTENSION cl_khr_fp64 : e
 #elif OPENACC
 #include <omp.h>
 #include <openacc.h>
+#elif SYCL
+// SYCL lib 
+#if __has_include(<SYCL/sycl.hpp>)
+#include <SYCL/sycl.hpp>
+#else
+#include <CL/sycl.hpp>
+#endif
+#include <omp.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
@@ -81,6 +89,16 @@ struct GraficObject{
 	bench_t* d_A;
 	bench_t* d_B;
 	bench_t* kernel;
+	#elif OPENACC
+	// OpenACC part
+	bench_t* d_A;
+	bench_t* d_B;
+	bench_t* kernel;
+	#elif SYCL
+	// SYCL part
+	bench_t* d_A;
+	bench_t* d_B;
+	bench_t* kernel;
 	#elif HIP
 	// Hip part --
 	bench_t* d_A;
@@ -96,10 +114,33 @@ struct GraficObject{
 	// CUDA PART
 	bench_t* d_A;
 	bench_t* d_B;
-	bench_t* kernel;
+	bench_t* kernel; 
 	#endif
 	float elapsed_time;
 };
+
+#ifdef SYCL
+class my_device_selector : public sycl::device_selector {
+	public:
+	int operator()(const sycl::device& dev) const override {
+		#ifdef GPU
+		if ( dev.has(sycl::aspect::gpu)) {
+			return 1;
+		}else {
+			return -1;
+		}
+		#else
+		if ( dev.has(sycl::aspect::cpu)) {
+			return 1;
+		}else {
+			return -1; 
+		}
+		#endif
+		return -1;	
+	}
+};
+auto myQueue = sycl::queue{my_device_selector{}};
+#endif
 
 void init(GraficObject *device_object, char* device_name);
 void init(GraficObject *device_object, int platform, int device, char* device_name);

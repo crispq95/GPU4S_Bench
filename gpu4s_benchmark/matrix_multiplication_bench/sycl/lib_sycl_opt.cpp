@@ -47,6 +47,57 @@ void transpose(bench_t *A, bench_t *B, int n) {
     }
 }
 
+void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, const int n, const int m, const int w,
+                             sycl::nd_item<3> item_ct1, bench_t *A_tile, bench_t *B_tile)
+{
+
+    unsigned int i = item_ct1.get_group(2) * BLOCK_SIZE + item_ct1.get_local_id(2);
+    unsigned int j = item_ct1.get_group(1) * BLOCK_SIZE + item_ct1.get_local_id(1);
+
+    bench_t acumulated = 0;
+    unsigned int idx = 0;
+
+    // load memory
+    for (unsigned int sub = 0; sub < item_ct1.get_group_range(2); ++sub)
+    {
+
+        idx = i * n + sub * BLOCK_SIZE + item_ct1.get_local_id(1);
+
+        if(idx >= m*n)
+        {
+            A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + item_ct1.get_local_id(1)] = 0;
+        }
+        else
+        {
+            A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE +
+                   item_ct1.get_local_id(1)] = A[idx];
+        }
+        idx = (sub * BLOCK_SIZE + item_ct1.get_local_id(2)) * w + j;
+
+        if (idx >= m*w)
+        {
+            B_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + item_ct1.get_local_id(1)] = 0;
+        }
+        else
+        {
+            B_tile[item_ct1.get_local_id(2) * BLOCK_SIZE +
+                   item_ct1.get_local_id(1)] = B[idx];
+        }
+        item_ct1.barrier(sycl::access::fence_space::local_space);
+        for (unsigned int k = 0; k < BLOCK_SIZE; ++k)
+        {
+            acumulated += A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + k] *
+                          B_tile[k * BLOCK_SIZE + item_ct1.get_local_id(1)];
+        }
+        item_ct1.barrier(sycl::access::fence_space::local_space);
+    }
+    if (i < n && j < w)
+    {
+        
+        C[i *n + j] = acumulated;
+    }
+}
+
 
 void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m, unsigned int w)
 {
@@ -54,28 +105,22 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	const double start_wtime = omp_get_wtime();
 	
 	// Transpose B to then compute matrix multiply
-	bench_t *B_transposed;
-    B_transposed = (bench_t*)malloc( sizeof(bench_t) * n * n);
-    transpose(device_object->d_B, B_transposed, n);
 	unsigned int i, j, k;
+
+	sycl::range<3> dimBlock(1, BLOCK_SIZE, BLOCK_SIZE);
+    sycl::range<3> dimGrid(1, ceil(float(m) / dimBlock[1]), ceil(float(n) / dimBlock[2]));
 	
 	#ifdef USM 
-	printf("USM Model\n");
-	myQueue
-		.parallel_for<class mat_mult>(
-		sycl::range<2>{n,w}, 
-		[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B,	d_C_local=device_object->d_C]\
-		(sycl::id<2> idx){
-			int row = idx[0], col = idx[1]; 
-			bench_t sum = 0.0;
+	myQueue.submit([&](sycl::handler &cgh) {
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(16), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(16), cgh);
 
-			for (unsigned int k = 0; k < m; k++){  
-				sum +=  d_A_local[row*n+k] * d_B_local[k*w+col];
-			}
-			d_C_local[row*n+col] = sum; 
-		}).wait();
+        cgh.parallel_for(sycl::nd_range<3>(dimGrid * dimBlock, dimBlock),
+			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B, d_C_local=device_object->d_C](sycl::nd_item<3> idx) {
+				matrix_multiplication_kernel( d_A_local, d_B_local, d_C_local, n, m, w, idx, A_tile.get_pointer(), B_tile.get_pointer());
+			}); 
+	}).wait(); 
 	#else 
-	printf("Accessor-Buffer Model\n");
 
 	sycl::buffer<bench_t> buffA(device_object->d_A, (n * n));
 	sycl::buffer<bench_t> buffB(device_object->d_B, (n * n));
@@ -83,47 +128,23 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	
 	int blockSize = 4;
 
-	myQueue.submit([&](sycl::handler& cgh) {
+	myQueue.submit([&](sycl::handler &cgh) {
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(16), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(16), cgh);
+
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::read>(cgh);
 		auto accC = buffC.get_access<sycl::access::mode::write>(cgh);
 
-		sycl::accessor<bench_t, 1, sycl::access::mode::read_write, sycl::access::target::local> A(sycl::range<1>(blockSize*blockSize), cgh);
-		sycl::accessor<bench_t, 1, sycl::access::mode::read_write, sycl::access::target::local> B(sycl::range<1>(blockSize*blockSize), cgh);
-
-		cgh.parallel_for<class mat_mult>(
-          sycl::nd_range<2>{sycl::range<2>(n, n), sycl::range<2>(blockSize, blockSize)},
-          [=](sycl::nd_item<2> idx) {
-            // Local item
-			int col = idx.get_local_id(1), blockX = idx.get_group(1);	//localX
-			int row = idx.get_local_id(0), blockY = idx.get_group(0);	//localY
-
-			int gRow = blockSize * idx.get_group().get_id(0) + row;
-			int gCol = blockSize * idx.get_group().get_id(1) + col;
-
-            int a_start= n*blockSize*blockY, b_start= blockSize*blockX;
-            int a_end = a_start + n - 1;
-
-            bench_t sum = 0.0f;
-			for (int a = a_start, b = b_start; a <= a_end;  a += blockSize, b += (blockSize * n)) {
-				A[row*blockSize+col] = accA[a+n*row+col];
-				B[col*blockSize+row] = accB[b+n*row+col];
-
-				idx.barrier(sycl::access::fence_space::local_space);
-				for (int k = 0; k < blockSize; k++) {
-					sum += A[row * blockSize + k] * B[col * blockSize + k];
-				}
-				idx.barrier(sycl::access::fence_space::local_space);
-			}
-			auto index = idx.get_global_id(0) * idx.get_global_range()[1] + idx.get_global_id(1);
-			accC[index] = sum;
-		  });
-	});
-	
+        cgh.parallel_for(sycl::nd_range<3>(dimGrid * dimBlock, dimBlock),
+			[=](sycl::nd_item<3> idx) {
+				matrix_multiplication_kernel( accA.get_pointer(), accB.get_pointer(), accC.get_pointer(), 
+					n, m, w, idx, A_tile.get_pointer(), B_tile.get_pointer());
+			}); 
+	}).wait(); 
 
 	#endif
 
-    free(B_transposed);
 
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
@@ -138,6 +159,7 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 	 // todo
 	memcpy(h_C, &device_object->d_C[0], sizeof(bench_t)*size);
 	#endif
+	printf("h_C[0]= %f\n", h_C[0]); 
 }
 
 

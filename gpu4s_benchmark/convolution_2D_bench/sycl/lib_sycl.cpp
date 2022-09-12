@@ -41,8 +41,7 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* k
 void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
 {
 	// Start compute timer
-	// const double start_wtime = omp_get_wtime();
-
+	const double start_wtime = omp_get_wtime();
 
 	#ifdef USM 
 	myQueue
@@ -122,7 +121,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	#endif 
 
 	// End compute timer
-	//device_object->elapsed_time = omp_get_wtime() - start_wtime;
+	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 }
 
 

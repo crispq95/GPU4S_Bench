@@ -114,8 +114,7 @@ struct GraficObject{
 	#endif
 	float elapsed_time;
 };
-
-#ifdef SYCL
+#ifdef SYCL 
 class my_device_selector : public sycl::device_selector {
 	public:
 	int operator()(const sycl::device& dev) const override {
@@ -136,7 +135,7 @@ class my_device_selector : public sycl::device_selector {
 	}
 };
 auto myQueue = sycl::queue{my_device_selector{}};
-#endif
+#endif 
 
 void init(GraficObject *device_object, char* device_name);
 void init(GraficObject *device_object, int platform, int device, char* device_name);

@@ -41,7 +41,7 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 	device_object->d_A = sycl::malloc_device<bench_t>(size_a, myQueue);
 	myQueue.memcpy(device_object->d_A, h_A, (size_a)*sizeof(bench_t)).wait();
 	#else
-	printf("SIZE A %d\n", size_a); 
+	printf("init SIZE A %d\n", size_a); 
 
 	device_object->d_A = h_A;
 	#endif
@@ -56,6 +56,9 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 	#endif
 	#endif
 }
+
+
+
 
 
 void execute_kernel(GraficObject *device_object, unsigned int size)
@@ -119,11 +122,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 	
 
 	#else	//AB INT
-	printf ("INT AB_________\n");
 	unsigned int full_size = size * 2;
+	{
 	//create buffers 
 	sycl::buffer<bench_t> buffA(device_object->d_A, (size*2));
-	sycl::buffer<bench_t> buffB(device_object->d_B, (size*size));
+	sycl::buffer<bench_t> buffB(device_object->d_B, (size*2));
 
 	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
@@ -151,7 +154,7 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 
 				accB[i+size] = sum_value_high;
 			});
-	});
+	}).wait();
 
 	myQueue.submit([&](sycl::handler& cgh){
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
@@ -172,15 +175,11 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 				
 				accB[i] = sum_value_low;
 			});
-	});
-	
-	myQueue.wait();
-
+	}).wait();
+	}
 	#endif 
 	
 	#else //ENDIF INT
-	printf("Working with floats\n");
-
 	// flotating part
 	unsigned int full_size = size * 2;
 	int hi_start = -(LOWPASSFILTERSIZE / 2);
@@ -244,62 +243,62 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 				d_B_local[i+size] = sum_value_high;
 	}).wait();
 	#else 
-
 	// //create buffers 
-	auto buffA = sycl::buffer{device_object->d_A, sycl::range{size*size}};
-	auto buffB = sycl::buffer{device_object->d_B, sycl::range{size*size}};
+	auto buffA = sycl::buffer{device_object->d_A, sycl::range{size*2}};
+	auto buffB = sycl::buffer{device_object->d_B, sycl::range{size*2}};
 	auto buffLF = sycl::buffer{device_object->low_filter, sycl::range{LOWPASSFILTERSIZE}};
 	auto buffHF = sycl::buffer{device_object->high_filter, sycl::range{HIGHPASSFILTERSIZE}};
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
-		//create accessors 
-		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
-		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
-		auto accLF = buffLF.get_access<sycl::access::mode::read>(cgh);
-		auto accHF = buffHF.get_access<sycl::access::mode::read>(cgh);
-		
+	
+
+
+		myQueue.submit([&](sycl::handler& cgh){
+			//create accessors 
+			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+			auto accLF = buffLF.get_access<sycl::access::mode::read>(cgh);
+			auto accHF = buffHF.get_access<sycl::access::mode::read>(cgh);
+			
 		cgh.parallel_for<class wavelet_transform>(
-			sycl::range<1>{size}, 
-			[=](sycl::id<1> idx){
-				int i = idx[0]; 
-				bench_t sum_value_low = 0;
+			sycl::range<1>{size}, [=](sycl::id<1> idx){
+			int i = idx[0]; 
+			bench_t sum_value_low = 0;
 
-				//Lowpass filter
-				for (int hi = hi_start; hi < hi_end + 1; ++hi){
-					signed int x_position = (2 * i) + hi;
-					if (x_position < 0) {
-						// turn negative to positive
-						x_position = x_position * -1;
-					}
-					else if (x_position > full_size - 1)
-					{
-						x_position = full_size - 1 - (x_position - (full_size -1 ));
-					}
-					// Restore the hi value to work with the array
-					sum_value_low += accLF[hi + hi_end] * accA[x_position];
-				}	
-				accB[i] = sum_value_low;
-
-				bench_t sum_value_high =  0;
-				//Highpass filter
-				for (int gi = gi_start; gi < gi_end + 1; ++gi){
-					int x_position = (2 * i) + gi + 1;
-					if (x_position < 0) {
-						// turn negative to positive
-						x_position = x_position * -1;
-					}
-					else if (x_position >  full_size - 1){
-						x_position = full_size - 1 - (x_position - (full_size -1 ));
-					}
-					sum_value_high += accHF[gi + gi_end] * accA[x_position];
+			//Lowpass filter
+			for (int hi = hi_start; hi < hi_end + 1; ++hi){
+				signed int x_position = (2 * i) + hi;
+				if (x_position < 0) {
+					// turn negative to positive
+					x_position = x_position * -1;
 				}
-				// store the value
-				accB[i+size] = sum_value_high;
+				else if (x_position > full_size - 1)
+				{
+					x_position = full_size - 1 - (x_position - (full_size -1 ));
+				}
+				// Restore the hi value to work with the array
+				sum_value_low += accLF[hi + hi_end] * accA[x_position];
+			}	
+			accB[i] = sum_value_low;
+
+			bench_t sum_value_high =  0;
+			//Highpass filter
+			for (int gi = gi_start; gi < gi_end + 1; ++gi){
+				int x_position = (2 * i) + gi + 1;
+				if (x_position < 0) {
+					// turn negative to positive
+					x_position = x_position * -1;
+				}
+				else if (x_position >  full_size - 1){
+					x_position = full_size - 1 - (x_position - (full_size -1 ));
+				}
+				sum_value_high += accHF[gi + gi_end] * accA[x_position];
+			}
+			// store the value
+			accB[i+size] = sum_value_high;
 
 			});
-		}); //end submit
+		}).wait(); //end submit
 
-		e.wait();
 
 	#endif //ENDIF AB
 	#endif //ENDIF FLOAT

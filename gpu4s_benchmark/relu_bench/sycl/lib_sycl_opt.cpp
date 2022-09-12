@@ -39,42 +39,62 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 
 void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
 {
-	
-	//startTimeList.at(i) = wall_clock_t::now();
 	const double start_wtime = omp_get_wtime();
+    int wgroup_size = 64; 
+    //int n_wgroups = ceil((n*n)/wgroup_size);
+    
+	sycl::range<3> block(1, 1, BLOCK_SIZE);
+	sycl::range<3> grid_row(1, 1, ceil(float((n*n))/(BLOCK_SIZE)));
 
-	
 	#ifdef USM
 	myQueue
 	   .parallel_for<class relu>(
-			sycl::range{n*n}, 
-			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<1> idx){
-				if (d_A_local[idx] > 0){
-					d_B_local[idx] = d_A_local[idx];
-				}else {
-					d_B_local[idx] = 0;
+			sycl::nd_range<3>(grid_row * block, block), [=, d_A_local=device_object->d_A, d_B_local=device_object->d_B]
+			(sycl::nd_item<3> idx){
+				int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
+				bench_t threshold = 0;
+				if(i < n*n)
+				{
+					#ifdef INT
+					d_B_local[i] = sycl::max(threshold, d_A_local[i]); 
+					#elif FLOAT
+					d_B_local[i] = sycl::max(threshold, d_A_local[i]); 
+					#else
+					d_B_local[i] = sycl::maxf(threshold, d_A_local[i]); 
+					#endif
 				}
-			}); 
-
-	myQueue.wait();
+			}).wait();
 	#else 
 	try {
 	//create buffers 
 	auto buffA = sycl::buffer{device_object->d_A, sycl::range{n*n}};
 	auto buffB = sycl::buffer{device_object->d_B, sycl::range{n*n}};
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
+	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 		
 		cgh.parallel_for<class relu>(
-			sycl::range<1>{n*n}, [=](sycl::id<1> idx){
-			accB[i] = (accA[idx] > 0) ? accA[idx] : 0;
-			
+			sycl::nd_range<3>(grid_row * block, block), [=](sycl::nd_item<3> idx){
+
+			int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
+			bench_t threshold = 0;
+
+			if(i < n*n)
+			{
+				#ifdef INT
+				accB[i] = sycl::max(threshold, accA[i]); 
+				#elif FLOAT
+				accB[i] = sycl::max(threshold, accA[i]); 
+				#else
+				accB[i] = sycl::maxf(threshold, accA[i]); 
+  				#endif
+
+			}
 		});	
-	}); 
-	e.wait();
+	}).wait(); 
+
 	}catch (const sycl::exception& e) {
         	std::cout << "Exception caught: " << e.what() << std::endl;
 	}
