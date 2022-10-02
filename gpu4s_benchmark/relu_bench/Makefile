@@ -15,14 +15,16 @@ NVCCFLAGS = -arch compute_72 -code sm_72
 # CUDA FLAGS
 CUFLAGS = -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcuda -lcudart 
 # OPENCL FLAGS
-OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/ -lOpenCL 
+OPFLAGS = -I/usr/local/cuda/include/ -L/oldroot/root/usr/lib/x86_64-linux-gnu/ -lOpenCL 
 # OPENMP FLAGS
 OMPFLAGS = -fopenmp -lm
 OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp 
 # SYCL FLAGS 
-SYCLFLAGS =  -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+#SYCLFLAGS =  -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+# SYCLFLAGS =  -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+# SYCLFLAGS =  -fsycl -g -Wall  -L. -O3 -std=c++17  -fopenmp 
 # OPENACC FLAGS
-ACCFLAGS = -acc=gpu -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
+ACCFLAGS = -acc=gpu -ta=tesla:cc61 -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 
@@ -40,6 +42,14 @@ BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 # SYCL default device is CPU
 DEVICETARGET = CPU
 MODEL = USM
+
+CPU = CPU
+
+ifeq ($(DEVICETARGET),$(CPU))
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+endif
 
 # FOLDERS
 # CUDA FOLDER

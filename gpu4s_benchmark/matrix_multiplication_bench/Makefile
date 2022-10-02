@@ -13,7 +13,7 @@ CFLAGS  = -O3
 # CPU compiler flags:
 CPUFLAGS  = -O3
 # NVCC compiler flags
-NVCCFLAGS = -arch compute_72 -code sm_72 -O3
+NVCCFLAGS = -O3 #-arch compute_72 -code sm_72 
 # CUDA FLAGS
 CUFLAGS = -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcuda -lcudart 
 # OPENCL FLAGS
@@ -50,6 +50,14 @@ BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 # SYCL default device is CPU
 DEVICETARGET = CPU
 MODEL = USM
+
+ifeq ($(DEVICETARGET), CPU)
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+   ACCFLAGS =  -ta=multicore -Minfo=accel -lm 
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+   ACCFLAGS =  -acc=gpu -ta:tesla:cc61 -Minfo=accel -lm 
+endif
 
 # FOLDERS
 # CPU FUNCTIONS FOLDER
@@ -103,7 +111,7 @@ OpenMPGPU: openmpgpu
 .PHONY: OpenACC
 OpenAcc: openacc
 .PHONY: SYCL
-SYCL: sycl
+SYCL: sycl 
 .PHONY: Hip
 Hip: hip
 .PHONY: CUDA-opt

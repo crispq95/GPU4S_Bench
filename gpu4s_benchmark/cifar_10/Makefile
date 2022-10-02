@@ -21,7 +21,8 @@ OMPFLAGS = -fopenmp -lm
 # OPENACC FLAGS
 ACCFLAGS = -acc=multicore -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # SYCL FLAGS 
-SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+# SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+
 # HIP FLAGS
 HIPFLAGS = -I/opt/rocm/hip/include -L/opt/rocm/hip/lib
 
@@ -31,6 +32,12 @@ ENDIANFLAGS =
 
 # Data type can be INT FLOAT and DOUBLE
 DATATYPE =
+
+ifeq ($(DEVICETARGET),$(CPU))
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+endif
 
 # By default BLOCKSIZE equals 4.
 BLOCKSIZE = 4

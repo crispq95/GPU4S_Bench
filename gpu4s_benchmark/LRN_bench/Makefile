@@ -42,6 +42,14 @@ BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 DEVICETARGET = CPU
 MODEL = AB
 
+ifeq ($(DEVICETARGET), CPU)
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+   ACCFLAGS =  -ta=multicore -Minfo=accel -lm 
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+   ACCFLAGS =  -acc=gpu -ta:tesla:cc61 -Minfo=accel -lm 
+endif
+
 # FOLDERS
 # CUDA FOLDER
 CUFOLDER = ./cuda/

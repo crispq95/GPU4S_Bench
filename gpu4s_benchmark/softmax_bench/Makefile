@@ -20,7 +20,7 @@ OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/
 OMPFLAGS = -fopenmp -lm
 OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp -lm
 # OPENACC FLAGS
-ACCFLAGS =  -acc=gpu -ta:tesla:cc61 -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
+ #-ta=tesla:cc61,managed #-acc=gpu
 # SYCL FLAGS 
 SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17 -fopenmp #quitar
 # HIP FLAGS
@@ -38,8 +38,16 @@ BLOCKSIZE = 4
 BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 
 # SYCL default device is CPU
-DEVICETARGET = CPU
-MODEL = USM
+DEVICETARGET=CPU 
+MODEL=USM
+
+ifeq ($(DEVICETARGET), CPU)
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+   ACCFLAGS =  -ta=multicore -Minfo=accel -lm 
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+   ACCFLAGS =  -acc=gpu -ta:tesla:cc61 -Minfo=accel -lm 
+endif
 
 # FOLDERS
 # CUDA FOLDER
