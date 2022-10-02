@@ -22,7 +22,7 @@ OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/
 OMPFLAGS = -fopenmp -lm
 OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp 
 # OPENACC FLAGS
-ACCFLAGS =  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
+ACCFLAGS =  -ta=tesla:cc61 -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # SYCL FLAGS 
 SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
 # Littelendian and Bigendian flags, by default if value is not set is Littelendian if value is set to -DBIGENDIAN is Bigendian
@@ -39,6 +39,12 @@ BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 # SYCL default device is CPU
 DEVICETARGET = CPU
 MODEL = USM
+
+ifeq ($(DEVICETARGET),$(CPU))
+   SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+else
+   SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+endif
 
 # FOLDERS
 # CUDA FOLDER
@@ -283,7 +289,16 @@ main_openacc_opt: main.cpp lib_acc_opt.o cpu_functions.o
 	$(NVC) -D$(DATATYPE) -DOPENMP main.cpp  $(ACCFOLDER)lib_acc_opt.o  $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_acc_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(ACCFLAGS)
 # End OpenACC optimized
 
+# SYCL Part optimized
+sycl-opt: main_sycl_opt
 
+lib_sycl_opt.o: $(SYCLFOLDER)lib_sycl_opt.cpp
+	$(SYCL) -D$(DATATYPE) -D$(MODEL) -D$(DEVICETARGET) -DBLOCK_SIZE=$(BLOCKSIZE) -DSYCL -c $(SYCLFOLDER)lib_sycl_opt.cpp -o $(SYCLFOLDER)lib_sycl_opt.o $(CFLAGS) $(SYCLFLAGS)
+
+main_sycl_opt: main.cpp lib_sycl_opt.o cpu_functions.o 
+	mkdir -p $(OUTPUTFOLDER)
+	$(SYCL) -D$(DATATYPE) -D$(MODEL) -D$(DEVICETARGET) main.cpp $(SYCLFOLDER)lib_sycl_opt.o $(CPUFUNCTIONFOLDER)cpu_functions.o -o $(OUTPUTFOLDER)$(TARGET)_sycl_opt_$(shell echo $(DATATYPE) | tr A-Z a-z) $(CFLAGS) $(SYCLFLAGS)
+# End SYCL optimized
 
 # Hip part
 hip-opt: main_hip_opt

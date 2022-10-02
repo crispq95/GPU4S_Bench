@@ -37,7 +37,7 @@ void transpose(bench_t *A, bench_t *B, int n) {
 }
 
 
-void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m, unsigned int w)
+void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m, unsigned int w)
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
@@ -48,47 +48,22 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
     transpose(device_object->d_B, B_transposed, n);
 	unsigned int i, j, k;
 	
-	//#pragma acc parallel 
-	//{
-	
-	
-	bench_t dot;
-	#pragma acc parallel loop collapse(2) private(i,j,k)
-	for (i = 0; i < n; i++) { 
-		for (j = 0; j < n; j++) {
-			dot  = 0;
-			for (k = 0; k < n; k++) {
-				dot += device_object->d_A[i*n+k]*B_transposed[j*n+k];
-			} 
-			device_object->d_C[i*n+j ] = dot;
-		}
-	}
-	
-	
-	/*
 	#pragma acc enter data copyin(device_object[0:2])
-	{
-	#pragma acc enter data copyin(device_object->d_A[0:n*n], B_transposed[0:n*n]) create(device_object->d_C[0:n*n])
-	{
-	#pragma acc parallel loop present(device_object, device_object->d_A, B_transposed, device_object->d_C)
-	for (i = 0; i < n; i++) { 
-		for (j = 0; j < n; j++) {
-			bench_t dot  = 0;
-			for (k = 0; k < n; k++) {
+	#pragma acc enter data copyin(device_object->d_A[0:n*w], device_object->d_B[0:n*m]) create(device_object->d_C[0:m*w])
+	bench_t dot;
+	#pragma acc parallel loop independent collapse(2) private(i,j,k)
+	for (int i = 0; i < n; i++) { 
+		for (int j = 0; j < n; j++) {
+			dot  = 0;
+			#pragma acc loop reduction(+:dot)
+			for (int k = 0; k < n; k++) {
 				dot += device_object->d_A[i*n+k]*B_transposed[j*n+k];
 			} 
-			device_object->d_C[i*n+j ] = dot;
+			device_object->d_C[i*n+j] = dot;
 		}
-	}
-	
 	}
 	
 	#pragma acc exit data copyout(device_object->d_C[0:m*w])
-	}*/
-	
-
-	
-
     free(B_transposed);
 
 	// End compute timer

@@ -19,9 +19,12 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 	device_object->d_A = sycl::malloc_device<bench_t>(size_a_matrix, myQueue);
 	device_object->d_B = sycl::malloc_device<bench_t>(size_b_matrix, myQueue);
 
-// 	device_object->acumulate_value_a_b = sycl::malloc_device<bench_t>(1, myQueue);
-// 	device_object->acumulate_value_a_a = sycl::malloc_device<bench_t>(1, myQueue);
-// 	device_object->acumulate_value_b_b = sycl::malloc_device<bench_t>(1, myQueue);
+ 	device_object->mean_A = sycl::malloc_device<result_bench_t>(1, myQueue);
+    device_object->mean_B = sycl::malloc_device<result_bench_t>(1, myQueue);
+    
+    device_object->acumulate_value_a_b = sycl::malloc_device<result_bench_t>(1, myQueue);
+    device_object->acumulate_value_b_b = sycl::malloc_device<result_bench_t>(1, myQueue);
+    device_object->acumulate_value_a_a = sycl::malloc_device<result_bench_t>(1, myQueue);
 	#endif
 	return true;
 }
@@ -33,12 +36,13 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 	myQueue.memcpy(device_object->d_A, h_A, (size_a)*sizeof(bench_t));
 	myQueue.memcpy(device_object->d_B, h_B, (size_b)*sizeof(bench_t));
 
-// 	myQueue.memset(device_object->mean_A, 0, (1)*sizeof(bench_t));
-// 	myQueue.memset(device_object->mean_B, 0, (1)*sizeof(bench_t));
+    bench_t zero = 0;
+    myQueue.memcpy(device_object->mean_A, &zero, (1)*sizeof(result_bench_t)).wait();
+    myQueue.memcpy(device_object->mean_B, &zero, (1)*sizeof(result_bench_t)).wait();
 
-// 	myQueue.memset(device_object->acumulate_value_a_b, 0, (1)*sizeof(bench_t));
-// 	myQueue.memset(device_object->acumulate_value_a_a, 0, (1)*sizeof(bench_t));
-// 	myQueue.memset(device_object->acumulate_value_b_b, 0, (1)*sizeof(bench_t));
+    myQueue.memcpy(device_object->acumulate_value_a_b, &zero, (1)*sizeof(result_bench_t)).wait();
+    myQueue.memcpy(device_object->acumulate_value_b_b, &zero, (1)*sizeof(result_bench_t)).wait();
+    myQueue.memcpy(device_object->acumulate_value_a_a, &zero, (1)*sizeof(result_bench_t)).wait();
 
 	myQueue.wait();
 	#else
@@ -126,9 +130,9 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
             sycl::access::address_space::global_space> (*acumulate_value_b_b) += result_mean_b * result_mean_b;
 		}).wait();
 	
-    device_object->acumulate_value_a_a = (*acumulate_value_a_a); 
-    device_object->acumulate_value_a_b = (*acumulate_value_a_b);
-    device_object->acumulate_value_b_b = (*acumulate_value_b_b);
+    *device_object->acumulate_value_a_a = *(acumulate_value_a_a); 
+    *device_object->acumulate_value_a_b = *(acumulate_value_a_b);
+    *device_object->acumulate_value_b_b = *(acumulate_value_b_b);
 
     sycl::free(sum_values_a, myQueue);
     sycl::free(sum_values_b, myQueue);
@@ -139,17 +143,18 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 
 	#else 
 
-	result_bench_t mean_a_matrix=0; 
-	result_bench_t mean_b_matrix=0;
-    
-	result_bench_t acumulate_value_a_b = 0;
-	result_bench_t acumulate_value_a_a = 0;
-	result_bench_t acumulate_value_b_b = 0;
-	
-	result_bench_t result_mean_a = 0;
-	result_bench_t result_mean_b = 0;
-    
 	{
+		// printf("EXEC\n"); 
+		result_bench_t mean_a_matrix=0; 
+		result_bench_t mean_b_matrix=0;
+		
+		result_bench_t acumulate_value_a_b = 0;
+		result_bench_t acumulate_value_a_a = 0;
+		result_bench_t acumulate_value_b_b = 0;
+		
+		result_bench_t result_mean_a = 0;
+		result_bench_t result_mean_b = 0;
+	
 		sycl::buffer<result_bench_t> buff_mean_a(&mean_a_matrix, 1);
 		sycl::buffer<result_bench_t> buff_mean_b(&mean_b_matrix, 1);
 
@@ -160,6 +165,7 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 		sycl::buffer<bench_t> buffA(device_object->d_A, (size*size));
 		sycl::buffer<bench_t> buffB(device_object->d_B, (size*size));
 
+		// // printf("k1\n"); 
 		myQueue.submit([&](sycl::handler& cgh) {
 			auto atomic_acc_a = buff_mean_a.get_access<sycl::access::mode::read_write>(cgh);
 			auto atomic_acc_b = buff_mean_b.get_access<sycl::access::mode::read_write>(cgh);
@@ -177,16 +183,15 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 				atomic_a += a_bA[idx[0]];
 				atomic_b += a_bB[idx[0]];
 			});
-
-			
 		}).wait();
-        
+
+		// // printf("k2\n"); 	
         myQueue.submit([&](sycl::handler& cgh) {
 			auto atomic_acc_a = buff_mean_a.get_access<sycl::access::mode::read_write>(cgh);
 			auto atomic_acc_b = buff_mean_b.get_access<sycl::access::mode::read_write>(cgh);
 
-			auto acc_val_a_b = buff_acumulate_a_b.get_access<sycl::access::mode::read_write>(cgh);
 			auto acc_val_a_a = buff_acumulate_a_a.get_access<sycl::access::mode::read_write>(cgh);
+			auto acc_val_a_b = buff_acumulate_a_b.get_access<sycl::access::mode::read_write>(cgh);
 			auto acc_val_b_b = buff_acumulate_b_b.get_access<sycl::access::mode::read_write>(cgh);
 
 			sycl::accessor<bench_t> a_bA(buffA, cgh);
@@ -210,20 +215,24 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 				result_bench_t mean_a_matrix = atomic_acc_a[0]/(size*size);
 				result_bench_t mean_b_matrix = atomic_acc_b[0]/(size*size);
 
-				result_bench_t result_mean_a = a_bA[idx] - mean_a_matrix;
-				result_bench_t result_mean_b = a_bB[idx] - mean_b_matrix;
+				result_bench_t result_mean_a = a_bA[idx[0]] - mean_a_matrix;
+				result_bench_t result_mean_b = a_bB[idx[0]] - mean_b_matrix;
 
-				atomic_acc_val_a_b += (result_mean_a*result_mean_b); 
 				atomic_acc_val_a_a += (result_mean_a*result_mean_a);
+				atomic_acc_val_a_b += (result_mean_a*result_mean_b); 
 				atomic_acc_val_b_b += (result_mean_b*result_mean_b);
 			});
 
 		}).wait();
+
+		// // printf("mem 1 \n"); 
+		(device_object->acumulate_value_a_b) = &acumulate_value_a_b;
+		(device_object->acumulate_value_a_a) = &acumulate_value_a_a;
+		(device_object->acumulate_value_b_b) = &acumulate_value_b_b;
+		// printf("mem 2 dep \n"); 
     }
 
-	device_object->acumulate_value_a_b = acumulate_value_a_b;
-	device_object->acumulate_value_a_a = acumulate_value_a_a;
-	device_object->acumulate_value_b_b = acumulate_value_b_b;
+	
 	#endif
 
 	// End compute timer
@@ -233,11 +242,13 @@ void execute_kernel(GraficObject *device_object, unsigned int size)
 
 void copy_memory_to_host(GraficObject *device_object, result_bench_t* h_R)
 {	     
+	printf("MEMCPY\n"); 
 	#ifdef USM  
-	*h_R = (result_bench_t)(device_object->acumulate_value_a_b / (result_bench_t)(sqrt(device_object->acumulate_value_a_a * device_object->acumulate_value_b_b)));
+	*h_R = (result_bench_t)((*device_object->acumulate_value_a_b )/ (result_bench_t)(sqrt((*device_object->acumulate_value_a_a) * (*device_object->acumulate_value_b_b))));
 	#else
-	*h_R = (result_bench_t)(device_object->acumulate_value_a_b / (result_bench_t)(sqrt(device_object->acumulate_value_a_a * device_object->acumulate_value_b_b)));
+	*h_R = (result_bench_t)((*(device_object->acumulate_value_a_b)) / (result_bench_t)(sqrt((*(device_object->acumulate_value_a_a)) * (*(device_object->acumulate_value_b_b)))));
 	#endif
+	printf("h_R = %f\n", *h_R); 
     
 }
 
@@ -273,6 +284,15 @@ void clean(GraficObject *device_object)
 
 	sycl::free(device_object->d_B, myQueue);
 	sycl::free(device_object->d_A, myQueue);
+	#else 
+	// free(device_object->d_A);
+	// free(device_object->d_B);
+	// free(device_object->mean_A);
+	// free(device_object->mean_B);
+	// free(device_object->acumulate_value_a_b);
+	// free(device_object->acumulate_value_a_a);
+	// free(device_object->acumulate_value_b_b);
+	
 	#endif
 	return;
 }

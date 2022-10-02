@@ -46,38 +46,43 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	#ifdef USM 
 	myQueue
 	   .parallel_for<class covolution_kernel>(
-			sycl::range<2>{n,n}, 
+			sycl::range<1>{n*n}, 
 			[=,  d_A_local=device_object->d_A, d_B_local=device_object->d_B, kernel_local=device_object->kernel]\
-			(sycl::id<2> idx)  {
-			int x = idx[0], y = idx[1]; 
+			(sycl::id<1> idx)  {
+			int block = idx[0];
+			int x = block/n, y = block%n;
+			
+			int kx, ky = 0;
 
+			const unsigned int squared_kernel_size = kernel_size * kernel_size;
 			int size = n;
 			int kernel_rad = kernel_size / 2;
 
-			bench_t sum = 0;
+			bench_t sum = 0, value = 0;
 
-			for(int i = -kernel_rad; i <= kernel_rad; ++i) 
-            {
-                for(int j = -kernel_rad; j <= kernel_rad; ++j){
-                    bench_t value = 0;
-                    
-                    if (i + x < 0 || j + y < 0)
-                        value = 0;
-                    else if ( i + x > size - 1 || j + y > size - 1)
-                        value = 0;
-                    else
-                        value = d_A_local[(x + i)*size+(y + j)];
-                    sum += value * kernel_local[(i+kernel_rad)* kernel_size + (j+kernel_rad)];
-                }
-            }
-    		d_B_local[x*size+y] = sum;
+			if (x < size && y < size)
+    		{
+				for(unsigned int k = 0; k < squared_kernel_size; ++k)
+				{
+					value = 0;
+					kx = (k/kernel_size) - kernel_rad; 
+					ky = (k%kernel_size) - kernel_rad;
+					if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + y > n - 1))
+					{
+						value = d_A_local[(x + kx)*n+(y + ky)];
+					}
+					sum += value * kernel_local[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
+				}
+				d_B_local[x*n+y] = sum;
+			}
+
 		}).wait(); 
 	#else 
 	try {
 		// //create buffers 
 		sycl::buffer<bench_t> buffA(device_object->d_A, (n * n));
 		sycl::buffer<bench_t> buffB(device_object->d_B, (n * n));
-		sycl::buffer<bench_t> buffKernel(device_object->kernel, (kernel_size));
+		sycl::buffer<bench_t> buffKernel(device_object->kernel, (kernel_size*kernel_size));
 
 		auto e = myQueue.submit([&](sycl::handler& cgh){
 			//create accessors 
@@ -86,29 +91,33 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 			auto accKernel = buffKernel.get_access<sycl::access::mode::read>(cgh);
 			
 			cgh.parallel_for<class mat_mult>(
-				sycl::range<2>{n,n}, [=](sycl::id<2> idx){
-				int x = idx[0], y = idx[1]; 
+				sycl::range<1>{n*n}, [=](sycl::id<1> idx){
+				int block = idx[0];
+				int x = block/n, y = block%n;
+				
+				int kx, ky = 0;
 
+				const unsigned int squared_kernel_size = kernel_size * kernel_size;
 				int size = n;
 				int kernel_rad = kernel_size / 2;
 
-				bench_t sum = 0;
+				bench_t sum = 0, value = 0;
 
-				for(int i = -kernel_rad; i <= kernel_rad; ++i) 
+				if (x < size && y < size)
 				{
-					for(int j = -kernel_rad; j <= kernel_rad; ++j){
-						bench_t value = 0;
-						
-						if (i + x < 0 || j + y < 0)
-							value = 0;
-						else if ( i + x > size - 1 || j + y > size - 1)
-							value = 0;
-						else
-							value = accA[(x + i)*size+(y + j)];
-						sum += value * accKernel[(i+kernel_rad)* kernel_size + (j+kernel_rad)];
+					for(unsigned int k = 0; k < squared_kernel_size; ++k)
+					{
+						value = 0;
+						kx = (k/kernel_size) - kernel_rad; 
+						ky = (k%kernel_size) - kernel_rad;
+						if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + y > n - 1))
+						{
+							value = accA[(x + kx)*n+(y + ky)];
+						}
+						sum += value * accKernel[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
 					}
 				}
-				accB[x*size+y] = sum;
+				accB[x*n+y] = sum;
 
 			});	//end parallel_for
 		}); //end submit

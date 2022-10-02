@@ -8,7 +8,7 @@
      _a > _b ? _a : _b; })
 
 
-void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,const int n, const int m, const int w, const int kernel_size)
+void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel, const int n, const int m, const int w, const int kernel_size)
 {
 	const unsigned int squared_kernel_size = kernel_size * kernel_size;
 	const int kernel_rad = kernel_size / 2;
@@ -83,45 +83,64 @@ void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel,cons
 
 void relu_kernel(const bench_t *A, bench_t *B, const int size)
 {
-	#ifdef USM
 	const unsigned int s = size; 
+
+	sycl::range<3> block(1, 1, BLOCK_SIZE);
+	sycl::range<3> grid_row(1, 1, ceil(float((s*s))/(BLOCK_SIZE)));
+
+	#ifdef USM
+
 	myQueue
-	   .parallel_for<class relu_kernel_USM>(
-			sycl::range<2>{s,s}, 
-			[=]	(sycl::id<2> idx){
-				int i = idx[0], j = idx[1]; 
-
-				if (A[i*size+j] > 0)
-					B[i*size+j] = A[i*size+j];
-				else 
-					B[i*size+j] = 0;
-		}).wait();
-
+	   .parallel_for<class relu>(
+			sycl::nd_range<3>(grid_row * block, block), [=]	(sycl::nd_item<3> idx){
+				int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
+				bench_t threshold = 0;
+				if(i < s*s)
+				{
+					#ifdef INT
+					B[i] = max(threshold, A[i]); 
+					#elif FLOAT
+					B[i] = max(threshold, A[i]); 
+					#else
+					B[i] = fmaxf(threshold, A[i]); 
+					#endif
+				}
+			}).wait();
     #else
-	{
-	sycl::buffer<bench_t> buffA(A, (size*size));
-	sycl::buffer<bench_t> buffB(B, (size*size));
+	
+	try{
+	auto buffA = sycl::buffer{A, sycl::range{s*s}};
+	auto buffB = sycl::buffer{B, sycl::range{s*s}};
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
+	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 		
-		const unsigned int s = size; 
+		cgh.parallel_for<class relu>(
+			sycl::nd_range<3>(grid_row * block, block), [=](sycl::nd_item<3> idx){
 
-		cgh.parallel_for<class relu_kernel_AB>(
-			sycl::range<2>{s, s}, [=](sycl::id<2> idx){
-				int i = idx[0], j = idx[0]; 
+			int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
+			bench_t threshold = 0;
 
-				for (unsigned int j = 0; j < size; ++j)
-					if (accA[i*size+j] > 0)
-						accB[i*size+j] = accA[i*size+j];
-					else 
-						accB[i*size+j] = 0;
-			});
-	});
-	e.wait(); 
+			if(i < s*s)
+			{
+				#ifdef INT
+				accB[i] = max(threshold, accA[i]); 
+				#elif FLOAT
+				accB[i] = max(threshold, accA[i]); 
+				#else
+				accB[i] = maxf(threshold, accA[i]); 
+  				#endif
+
+			}
+		});	
+	}).wait(); 
+
+	}catch (const sycl::exception& e) {
+        	std::cout << "Exception caught: " << e.what() << std::endl;
 	}
+	
 	#endif 
 }
 
@@ -136,10 +155,7 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 			[=]	(sycl::id<1> idx){
 			int i = idx[0];
 
-			if (A[i] > 0)
-				B[i] = A[i];
-			else 
-				B[i] = 0;
+			B[i] = A[i] > 0 ? A[i] : 0;
 	}).wait();
 	
 	#else
@@ -147,7 +163,7 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 	sycl::buffer<bench_t> buffA(A, (size));
 	sycl::buffer<bench_t> buffB(B, (size));
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
+	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
@@ -158,13 +174,9 @@ void relu_linear_kernel(const bench_t *A, bench_t *B, const int size)
 			sycl::range<1>{s}, [=](sycl::id<1> idx){
 				int i = idx[0]; 
 
-				if (accA[i] > 0)
-					accB[i] = accA[i];
-				else 
-					accB[i] = 0;
+				accB[i] = accA[i] > 0 ? accA[i] : 0;
 			});
-	});
-	e.wait(); 
+	}).wait(); 
 	}
 	#endif
 }
@@ -175,63 +187,50 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 	
 	const unsigned int block_size = size/stride;
 	const unsigned int stride_squared = stride*stride;
+	const unsigned int n = size; 
 
 	#ifdef USM
 	const unsigned int s = block_size*block_size; 
-
+	const unsigned int s_test = lateral_stride*lateral_stride;
 	myQueue
-	   .parallel_for<class max_pooling_kernel_USM>(
-			sycl::range<1>{s}, 
-			[=]	(sycl::id<1> idx){
-			int block = idx[0];
-			unsigned int blockx, blocky, block_zero, x, y = 0;
-			
-			blockx = block%block_size;
-			blocky = block/block_size;
-			block_zero = blockx*stride + blocky*stride*size;
-			bench_t max_value = A[block_zero];		
-			for(unsigned int i = 0; i < stride_squared; ++i)
-			{
-				x = i%stride;
-				y = i/stride; 
-				max_value = max(max_value, A[(block_zero+x) + y*size]);
-			}
-			B[block] = max_value;	
-	}).wait();
+	   .parallel_for<class max_pooling_kernel>(
+			sycl::range{s_test}, [=](sycl::id<1> idx)  {
+				int i = idx[0]; 
 
-
+				bench_t max_value = A[(((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) ];
+				for(unsigned int x = 0; x < stride; ++x)
+					for(unsigned int y = 0; y < stride; ++y)
+						max_value = max(max_value, A[((((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) + x)  + ( y * n)]);
+				B[idx] = max_value;
+				
+		}).wait();
 	#else
 	{
-	sycl::buffer<bench_t> buffA(A, (size*size));
-	sycl::buffer<bench_t> buffB(B, (block_size*block_size));
+	try {
+	// //create buffers 
+		auto buffA = sycl::buffer{A, sycl::range{n*n}};
+		auto buffB = sycl::buffer{B, sycl::range{block_size*block_size}};
 
-	myQueue.submit([&](sycl::handler& cgh){
-		//create accessors 
-		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
-		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
-		
-		const unsigned int s = block_size*block_size;  // REVISAR !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		myQueue.submit([&](sycl::handler& cgh){
+			//create accessors 
+			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+			
+			cgh.parallel_for<class max_pooling_kernel>(
+				sycl::range<1>{block_size*block_size}, [=](sycl::id<1> idx){
+				int i = idx[0];
+				
+				bench_t max_value = accA[(((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) ];
+				for(unsigned int x = 0; x < stride; ++x)
+					for(unsigned int y = 0; y < stride; ++y)
+						max_value = max(max_value, accA[((((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) + x)  + ( y * n)]);
+				accB[idx] = max_value;	
 
-		cgh.parallel_for<class max_pooling_kernel_AB>(
-			sycl::range<1>{s}, [=](sycl::id<1> idx){
-				int block = idx[0]; 
-				bench_t max_value = 0;
-				unsigned int blockx, blocky, block_zero, x, y = 0;
-
-				blockx = block%block_size;
-				blocky = block/block_size;
-				block_zero = blockx*stride + blocky*stride*size;
-				max_value = accA[block_zero];		
-
-				for(unsigned int i = 0; i < stride_squared; ++i)
-				{
-					x = i%stride;
-					y = i/stride; 
-					max_value = max(max_value, accA[(block_zero+x) + y*size]);
-				}
-				accB[block] = max_value;
-			});
-	}).wait(); 
+			});	
+		}).wait(); 
+	}catch (const sycl::exception& e) {
+		std::cout << "Exception caught: " << e.what() << std::endl;
+	}
 	
 	}
 	#endif
@@ -239,38 +238,37 @@ void max_pooling_kernel(const bench_t *A, bench_t *B, const int size, const unsi
 
 void lrn_kernel(const bench_t *A, bench_t *B, const int size)
 {
-	#ifdef USM
 	const unsigned int s = size;
-	myQueue
-	   .parallel_for<class lrn_kernel_USM>(
-			sycl::range<2>{s,s}, 
-			[=]	(sycl::id<2> idx){
-			int i = idx[0], j = idx[1];
 
-			B[i*size+j] = A[i*size+j]/sycl::powr((K+ALPHA*powf(A[i*size+j],2)),BETA);
-	}).wait();
+	#ifdef USM
+	myQueue.parallel_for(
+			sycl::range{s*s}, 
+			[=](sycl::id<1> idx){
+				B[idx] = A[idx]/sycl::powr((K+ALPHA*powf(A[idx],2)),BETA);
+			}).wait();
 
 	#else
-	{
-	sycl::buffer<bench_t> buffA(A, (size*size));
-	sycl::buffer<bench_t> buffB(B, (size*size));
+	try {
+		// //create buffers 
+		auto buffA = sycl::buffer{A, sycl::range{s*s}};
+		auto buffB = sycl::buffer{B, sycl::range{s*s}};
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
-		//create accessors 
-		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
-		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
-		
-		const unsigned int s = size; 
+		myQueue.submit([&](sycl::handler& cgh){
+			//create accessors 
+			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+			
+			cgh.parallel_for(
+				sycl::range<1>{s*s}, [=](sycl::id<1> idx){ 
+				int i = idx[0];
 
-		cgh.parallel_for<class lrn_kernel_AB>(
-			sycl::range<2>{s, s}, [=](sycl::id<2> idx){
-				int i = idx[0], j = idx[1]; 
+				accB[i] = accA[i]/sycl::pow((K+ALPHA*powf(accA[i],2)),BETA);
+			});	
+		}).wait(); 
 
-				accB[i*size+j] = accA[i*size+j]/sycl::powr((K+ALPHA*powf(accA[i*size+j],2)),BETA);
-			});
-	});
-	e.wait(); 
-	}
+		}catch (const sycl::exception& e) {
+        	std::cout << "Exception caught: " << e.what() << std::endl;
+    	}
 	#endif
 }
 
@@ -293,7 +291,7 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
 			}
 			C[i*m+j] = acumulated;
 	}).wait();
-
+	
 	#else
 	{
 
@@ -377,7 +375,7 @@ void softmax_kernel(const bench_t *A, bench_t *B, const int size)
 
 		cgh.parallel_for<class reduction_kernel>(sycl::range<1>{n}, 
 		[=](sycl::id<1> idx){
-			sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+			sycl::atomic_ref<float, sycl::memory_order::relaxed, sycl::memory_scope::device,
 			sycl::access::address_space::global_space> ao (atomic_buf[0]);
 
 			a_bB[idx] = sycl::exp(a_bA[idx]);
@@ -579,6 +577,7 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 	#else 
 	memcpy(h_C, &device_object->output_data[0], sizeof(bench_t)*size);
 	#endif
+	printf("hc[0] =%f\n", h_C[0]); 
 }
 
 

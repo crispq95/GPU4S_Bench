@@ -27,8 +27,10 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* k
 }
 
 
-void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
+void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m,unsigned int w, unsigned int kernel_size)
 {
+	#pragma acc data copyout(device_object->d_B[0:n*n]) copyin(device_object[0:3], device_object->d_A[0:n*n], device_object->kernel[0:kernel_size * kernel_size])
+	{
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
 
@@ -38,13 +40,18 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	bench_t value = 0;
 
 	const unsigned int squared_kernel_size = kernel_size * kernel_size;
+
+
 	
-	#pragma acc parallel loop 
+	#pragma acc parallel firstprivate(kernel_rad)
+	{
+	#pragma acc loop seq private(x,y,sum)
 	for (unsigned int block = 0; block < n*n; ++block){
 		x = block/n;
 		y = block%n;
 		sum = 0;
-		#pragma acc loop seq reduction(+:sum)
+		
+		#pragma acc loop vector reduction(+:sum) private(value,kx,ky)
 		for(unsigned int k = 0; k < squared_kernel_size; ++k){
 			value = 0;
 			kx = (k/kernel_size) - kernel_rad; 
@@ -56,9 +63,12 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 		}
 		device_object->d_B[x*n+y] = sum;
 	}
+	}
 
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
+	}
+
 }
 
 

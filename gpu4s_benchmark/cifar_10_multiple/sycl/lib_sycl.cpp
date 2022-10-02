@@ -377,7 +377,7 @@ void softmax_kernel(const bench_t *A, bench_t *B, const int size)
 
 		cgh.parallel_for<class reduction_kernel>(sycl::range<1>{n}, 
 		[=](sycl::id<1> idx){
-			sycl::atomic_ref<float, sycl::memory_order::relaxed, sycl::memory_scope::device,
+			sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
 			sycl::access::address_space::global_space> ao (atomic_buf[0]);
 
 			a_bB[idx] = sycl::exp(a_bA[idx]);

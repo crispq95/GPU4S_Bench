@@ -123,7 +123,7 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 			size_t local_id = idx.get_local_linear_id();
             size_t global_id = idx.get_global_linear_id();
 
-			sycl::atomic_ref<float, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space> ao (atomic_buf[0]);
+			sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device, sycl::access::address_space::global_space> ao (atomic_buf[0]);
 			local_mem[local_id] = 0;
 
             if ((2 * global_id) < (n*n)) {

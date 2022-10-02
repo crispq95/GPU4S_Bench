@@ -67,18 +67,14 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
     	sycl::range<3> dimGrid(1, 1, ceil(float(((n*n)+BLOCK_SIZE-1))/(BLOCK_SIZE)));
 		
 		auto e = myQueue.submit([&](sycl::handler& cgh){
-			
-		// sycl::range<3> dimGridColumn(1, 1, ceil(float((n+BLOCK_SIZE-1))/(BLOCK_SIZE.x)));
-		
 			//create accessors 
 			auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 			
 			cgh.parallel_for<LRN_bench_kernel>(
-				sycl::nd_range<3>{dimGrid*dimBlock,dimBlock}, [=](sycl::nd_item<3> idx){ 
-				int i = idx.get_local_range(2) * idx.get_group(2)+idx.get_local_id(2);
-
-				accB[i] = accA[i]/sycl::pow((K+ALPHA*powf(accA[i],2)),BETA);
+				sycl::	range{n*n}, [=](sycl::id<1> idx){ 
+					int i = idx[0];
+					accB[i] = accA[i]/sycl::pow((K+ALPHA*powf(accA[i],2)),BETA);
 			});	
 		}); 
 
