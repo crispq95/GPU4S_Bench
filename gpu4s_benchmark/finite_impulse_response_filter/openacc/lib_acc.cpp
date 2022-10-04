@@ -24,6 +24,7 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* k
 {
 	device_object->d_A = h_A;
 	device_object->kernel = kernel;
+	#pragma acc enter data copyin(device_object[0:3], device_object->d_A[0:size_a], device_object->kernel[0:size_b])
 }
 
 
@@ -33,20 +34,19 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 	const double start_wtime = omp_get_wtime();
 	const unsigned int kernel_rad = kernel_size / 2;
 	const unsigned int output_size = n + kernel_size - 1;
-
-	#pragma acc parallel 
-	{
-	#pragma acc loop  
+	#pragma acc enter data copyin(device_object[0:3], device_object->d_A[0:n], device_object->kernel[0:kernel_size]) create(device_object->d_B[0:n])
+	#pragma acc parallel loop	 
 	for(unsigned int i = 0; i < output_size; ++i){
-		bench_t tmp = 0;
-		#pragma acc loop tile(16,16) reduction(+:tmp)
-		for (unsigned int j = 0; j < kernel_size; ++j){		 
-			if (i +(j - kernel_size + 1) >= 0 && i +(j - kernel_size +1)<  n)
-    			tmp += device_object->kernel[kernel_size - j - 1] * device_object->d_A[i +(j - kernel_size + 1) ];
+		bench_t tmp = 0; 
+		#pragma acc loop reduction(+:tmp)
+		for (unsigned int j = 0; j < kernel_size; ++j){	
+			if (i +(j - kernel_size + 1) >= 0 && i +(j - kernel_size +1)<  n){
+    			 tmp += device_object->kernel[kernel_size - j - 1] * device_object->d_A[i +(j - kernel_size + 1) ];
+			}
 		}
-		device_object->d_B[i] = tmp;
+		device_object->d_B[i] = tmp; 
 	}
-	}
+	#pragma acc exit data copyout(device_object->d_B[0:n])
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 }
@@ -55,6 +55,7 @@ void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsign
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 {	     
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size);
+	printf("h_C[0] = %f\n", h_C[0]); 
 }
 
 

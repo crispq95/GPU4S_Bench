@@ -11,7 +11,7 @@ TARGET = fft
 # CC compiler flags:
 CFLAGS  = -g
 # NVCC compiler flags
-NVCCFLAGS = -arch compute_72 -code sm_72
+NVCCFLAGS = #-arch compute_72 -code sm_72
 # CUDA FLAGS
 CUFLAGS = -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcuda -lcudart 
 # OPENCL FLAGS
@@ -20,7 +20,6 @@ OPFLAGS = -I/usr/local/cuda/include/   -L/oldroot/root/usr/lib/x86_64-linux-gnu/
 OMPFLAGS = -fopenmp -lm
 OMPGPUFLAGS = -mp=gpu -gpu=cc61,managed -Minfo=mp -lm
 # OPENACC FLAGS
-ACCFLAGS =  -ta=tesla:cc61,managed -Minfo=accel -lm  #-ta=tesla:cc61,managed #-acc=gpu
 # SYCL FLAGS 
 SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
 # HIP FLAGS
@@ -43,10 +42,12 @@ BLOCKSIZESQUARED = $(shell echo $(BLOCKSIZE)\*$(BLOCKSIZE) | bc)
 DEVICETARGET = CPU
 MODEL = USM
 
-ifeq ($(DEVICETARGET),$(CPU))
+ifeq ($(DEVICETARGET), CPU)
    SYCLFLAGS = -fsycl  -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp
+   ACCFLAGS =  -ta=multicore -Minfo=accel -lm 
 else
    SYCLFLAGS = -fsycl -fsycl-targets=nvptx64-nvidia-cuda -arch=sm_71 -g -Wall  -L. -O3 -lm -std=c++17  -fopenmp 
+   ACCFLAGS =  -acc=gpu -ta:tesla:cc61 -Minfo=accel -lm 
 endif
 
 # FOLDERS

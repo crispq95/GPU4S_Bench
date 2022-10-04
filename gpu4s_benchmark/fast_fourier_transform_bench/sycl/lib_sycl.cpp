@@ -14,11 +14,13 @@ void binary_reverse_kernel(bench_t *Br, unsigned int mode, sycl::id<1> idx)
     j = (j & 0x0000FFFF) << 16 | (j & 0xFFFF0000) >> 16;                                                                    
     j >>= (32-mode);
 
+
     unsigned int position = j * 2;  
 
     Br[position] = Br[i *2];                                                                                                
     Br[position + 1] = Br[i *2 + 1]; 
 }
+
 
 void fft_kernel( bench_t *Br, const int64_t mmax, const bench_t wr, const bench_t wi, sycl::id<1> idx)
 {
@@ -84,24 +86,24 @@ void execute_kernel(GraficObject *device_object, int64_t size)
 
     n = size<<1;
     j=1;
-
-    #ifdef USM
+    #ifdef USM 
     myQueue.parallel_for(sycl::range<1>{s}, 
         [=, d_Br_local=device_object->d_Br](sycl::id<1> idx){
             binary_reverse_kernel(d_Br_local, mode, idx); 
     }).wait();
-    #else 
-    // NOT WORKING
-    sycl::buffer<bench_t> buffBr(device_object->d_Br, (s*2));
     
-    myQueue.submit([&](sycl::handler& cgh) {
-        auto accBr = buffBr.get_access<sycl::access::mode::read_write>(cgh);
-        cgh.parallel_for<class reduction_kernel_AB>(sycl::range<1>{s}, 
-        [=](sycl::id<1> idx){
-            binary_reverse_kernel(accBr.get_pointer(), mode, idx); 
-        });
+    #else 
+    // // NOT WORKING
+    // sycl::buffer<bench_t> buffBr(device_object->d_Br, (s*2));
+    
+    // myQueue.submit([&](sycl::handler& cgh) {
+    //     auto accBr = buffBr.get_access<sycl::access::mode::read_write>(cgh);
+    //     cgh.parallel_for<class reduction_kernel_AB>(sycl::range<1>{s}, 
+    //     [=](sycl::id<1> idx){
+    //         binary_reverse_kernel(accBr.get_pointer(), mode, idx); 
+    //     });
 
-    }).wait();
+    // }).wait();
     #endif
 
     mmax=2;
@@ -121,15 +123,15 @@ void execute_kernel(GraficObject *device_object, int64_t size)
                 fft_kernel( d_Br_local, mmax, wr, wi, idx);
             }).wait();
             #else 
-            sycl::buffer<bench_t> buffBr(device_object->d_Br, (s*2));
+            // sycl::buffer<bench_t> buffBr(device_object->d_Br, (s*2));
 
-            myQueue.submit([&](sycl::handler& cgh) {
-                auto accBr = buffBr.get_access<sycl::access::mode::read_write>(cgh);
+            // myQueue.submit([&](sycl::handler& cgh) {
+            //     auto accBr = buffBr.get_access<sycl::access::mode::read_write>(cgh);
                 
-                cgh.parallel_for(sycl::range<1>{s}, [=](sycl::id<1> idx){
-                    fft_kernel(accBr.get_pointer(), mmax, wr, wi, idx);
-                });
-            }).wait();
+            //     cgh.parallel_for(sycl::range<1>{s}, [=](sycl::id<1> idx){
+            //         fft_kernel(accBr.get_pointer(), mmax, wr, wi, idx);
+            //     });
+            // }).wait();
             #endif
             wtemp=wr;
             wr += wr*wpr - wi*wpi;
@@ -142,7 +144,7 @@ void execute_kernel(GraficObject *device_object, int64_t size)
     	++loop_w;    
     }
 
-    printf("device_object->d_Br[0]=%f\n", device_object->d_B[0]); 
+    // printf("device_object->d_Br[0]=%f\n", device_object->d_B[0]); 
 	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 }
@@ -152,9 +154,9 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_B, int64_t size
 {	     
     #ifdef USM
     myQueue.memcpy(h_B, device_object->d_Br, (size)*sizeof(bench_t)).wait();
-    #endif 
-
+    #else 
     memcpy(h_B, &device_object->d_Br[0], sizeof(bench_t)*size);
+    #endif 
     return;
 }
 
@@ -181,8 +183,11 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
 void clean(GraficObject *device_object)
 {
     #ifdef USM
-    sycl::free(device_object->d_Br, myQueue); 
-    sycl::free(device_object->d_B, myQueue); 
+        sycl::free(device_object->d_Br, myQueue); 
+        sycl::free(device_object->d_B, myQueue); 
+    #else 
+        free(device_object->d_Br); 
     #endif
+
     return;
 }
