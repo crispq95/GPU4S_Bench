@@ -6,76 +6,212 @@
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
+void covolution_kernel_GPU(const bench_t *A, bench_t *B, const bench_t *kernel,const int n, const int m, const int w, const int kernel_size, const int shared_size, const int kernel_rad,
+                  uint8_t *local_data, sycl::nd_item<3> idx)
+{
+    unsigned int size = n;
+    unsigned int x = idx.get_group(2) * idx.get_local_range(2) +idx.get_local_id(2);
+    unsigned int y = idx.get_group(1) * idx.get_local_range(1) +idx.get_local_id(1);
+    int x0, y0;
+
+    auto data = (bench_t *)local_data;
+    if (x < size && y < size)
+    {
+        // each thread load 4 values ,the corners
+        //TOP right corner
+        x0 = x - kernel_rad;
+        y0 = y - kernel_rad;
+        if ( x0 < 0 || y0 < 0 )
+        {
+            data[idx.get_local_id(2) * shared_size + idx.get_local_id(1)] = 0;
+        }
+        else
+        {
+            data[idx.get_local_id(2) * shared_size + idx.get_local_id(1)] = A[x0 * size + y0];
+        }
+
+        //BOTTOM right corner
+        x0 = x + kernel_rad;
+        y0 = y - kernel_rad;
+        if ( x0 > size-1  || y0 < 0 )
+        {
+            data[(idx.get_local_id(2) + kernel_rad * 2) * shared_size + idx.get_local_id(1)] = 0;
+        }
+        else
+        {
+            data[(idx.get_local_id(2) + kernel_rad * 2) * shared_size + idx.get_local_id(1)] = A[x0 * size + y0];
+        }
+
+        //TOP left corner
+        x0 = x - kernel_rad;
+        y0 = y + kernel_rad;
+        if ( x0 < 0  || y0 > size-1 )
+        {
+            data[idx.get_local_id(2) * shared_size + (idx.get_local_id(1) + kernel_rad * 2)] = 0;
+        }
+        else
+        {
+            data[idx.get_local_id(2) * shared_size + (idx.get_local_id(1) + kernel_rad * 2)] = A[x0 * size + y0];
+        }
+
+        //BOTTOM left corner
+        x0 = x + kernel_rad;
+        y0 = y + kernel_rad;
+        if ( x0 > size-1  || y0 > size-1 )
+        {
+            data[(idx.get_local_id(2) + kernel_rad * 2) * shared_size +
+                 (idx.get_local_id(1) + kernel_rad * 2)] = 0;
+        }
+        else
+        {
+            data[(idx.get_local_id(2) + kernel_rad * 2) * shared_size +
+                 (idx.get_local_id(1) + kernel_rad * 2)] =
+                A[x0 * size + y0];
+        }
+
+        idx.barrier();
+        bench_t sum = 0;
+        unsigned int xa = kernel_rad + idx.get_local_id(2);
+        unsigned int ya = kernel_rad + idx.get_local_id(1);
+
+		#pragma unroll
+        for(int i = -kernel_rad; i <= kernel_rad; ++i) // loop over kernel_rad  -1 to 1 in kernel_size 3
+            {
+                #pragma unroll
+                for(int j = -kernel_rad; j <= kernel_rad; ++j)
+                {
+                    sum += data[(xa + i) * shared_size +  (ya + j)] * kernel[(i+kernel_rad)* kernel_size + (j+kernel_rad)];
+                }
+            }
+
+        B[x*size+y ] = sum;
+    }
+
+}
+
 
 void convolution_kernel(const bench_t *A, bench_t *B, const bench_t *kernel, const int n, const int m, const int w, const int kernel_size)
 {
-	const unsigned int squared_kernel_size = kernel_size * kernel_size;
-	const int kernel_rad = kernel_size / 2;
-	const unsigned k_size_n = n; 
-	
-	#ifdef USM
-	const unsigned k_size = n*n; 
-	myQueue
-	   .parallel_for<class mat_mult_USM>(sycl::range<1>{k_size}, [=] (sycl::id<1> idx){
-				int block = idx[0]; 
-				int x, y, kx, ky = 0;
-				bench_t sum = 0;
+	const unsigned int N = n; 
 
-				x = block/n;
-				y = block%n;
-				for(unsigned int k = 0; k < squared_kernel_size; ++k)
-				{
-					bench_t value = 0;
-					kx = (k/kernel_size) - kernel_rad; 
-					ky = (k%kernel_size) - kernel_rad;
-					if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + y > n - 1))
+	#ifdef USM 
+		#ifdef CPU
+			myQueue
+			.parallel_for<class covolution_kernel>( 
+					sycl::range<2>{N,N}, 
+					[=] (sycl::id<2> idx)  {
+					int x = idx[0], y = idx[1]; 
+
+					int size = N;
+					int kernel_rad = kernel_size / 2;
+
+					bench_t sum = 0;
+
+					for(int i = -kernel_rad; i <= kernel_rad; ++i) 
 					{
-						value = A[(x + kx)*n+(y + ky)];
+						for(int j = -kernel_rad; j <= kernel_rad; ++j){
+							bench_t value = 0;
+							
+							if (i + x < 0 || j + y < 0)
+								value = 0;
+							else if ( i + x > size - 1 || j + y > size - 1)
+								value = 0;
+							else
+								value = A[(x + i)*size+(y + j)];
+							sum += value * kernel[(i+kernel_rad)* kernel_size + (j+kernel_rad)];
+						}
 					}
-					sum += value * kernel[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
-				}
-				B[x*n+y] = sum;
+					B[x*size+y] = sum;
+				}).wait(); 
+			#else 
+				sycl::range<3> dimBlock(1, BLOCK_SIZE, BLOCK_SIZE);
+				sycl::range<3> dimGrid(1, ceil(float(m) / dimBlock[1]),ceil(float(n) / dimBlock[2]));
+
+				unsigned int kernel_rad =  kernel_size / 2;
+				unsigned int size_shared = (BLOCK_SIZE + kernel_rad * 2) * sizeof(bench_t) * (BLOCK_SIZE + kernel_rad * 2) * sizeof(bench_t);
+				unsigned int size_shared_position = (BLOCK_SIZE + kernel_rad *2);
+			
+				myQueue.submit([&](sycl::handler &cgh) {
+					sycl::accessor<uint8_t, 1, sycl::access_mode::read_write, sycl::access::target::local> local_data(sycl::range<1>(size_shared), cgh);
+
+					cgh.parallel_for(sycl::nd_range<3>(dimGrid * dimBlock, dimBlock),
+						[=](sycl::nd_item<3> idx) {
+							covolution_kernel_GPU( A, B, kernel, n, m, w, kernel_size, size_shared_position, kernel_rad, local_data.get_pointer(), idx);
+					});
+				}).wait();
+			#endif
+	#else 
+	try {
+		#ifdef CPU
+			// //create buffers 
+			sycl::buffer<bench_t> buffA(A, (n * n));
+			sycl::buffer<bench_t> buffB(B, (n * n));
+			sycl::buffer<bench_t> buffKernel(kernel, (kernel_size*kernel_size));
+
+			auto e = myQueue.submit([&](sycl::handler& cgh){
+				//create accessors 
+				auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+				auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+				auto accKernel = buffKernel.get_access<sycl::access::mode::read>(cgh);
 				
-		}).wait();
-	#else
-	{
-	sycl::buffer<bench_t> buffA(A, (n*n));
-	sycl::buffer<bench_t> buffB(B, (n*n));
-	sycl::buffer<bench_t> buffKernel(kernel, (kernel_size*kernel_size));
+				cgh.parallel_for<class mat_mult>(
+					sycl::range<2>{N,N}, [=](sycl::id<2> idx){
+					int x = idx[0], y = idx[1]; 
 
-	auto e = myQueue.submit([&](sycl::handler& cgh){
-		//create accessors 
-		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
-		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
-		auto accKernel = buffKernel.get_access<sycl::access::mode::read>(cgh);
+					int size = N;
+					int kernel_rad = kernel_size / 2;
 
-		const unsigned k_size = n*n; 
-		
-		cgh.parallel_for<class convolution_kernel_AB>(
-			sycl::range<1>{k_size}, [=](sycl::id<1> idx){
+					bench_t sum = 0;
 
-			int block = idx[0]; 
-			int x, y, kx, ky = 0;
-			bench_t sum = 0.0;
-			
-			x = block/n;
-			y = block%n;
-			
-			for(unsigned int k = 0; k < squared_kernel_size; ++k){
-				bench_t value = 0;
-				kx = (k/kernel_size) - kernel_rad; 
-				ky = (k%kernel_size) - kernel_rad;
-				if(!(kx + x < 0 || ky + y < 0) && !( kx + x > n - 1 || ky + y > n - 1))
-					value = accA[(x + kx)*n+(y + ky)];
-				sum += value * accKernel[(kx+kernel_rad)* kernel_size + (ky+kernel_rad)];
-			}
-			accB[x*n+y] = sum;
-    
-			});
-	});
-	e.wait(); 
+					for(int i = -kernel_rad; i <= kernel_rad; ++i) 
+					{
+						for(int j = -kernel_rad; j <= kernel_rad; ++j){
+							bench_t value = 0;
+							
+							if (i + x < 0 || j + y < 0)
+								value = 0;
+							else if ( i + x > size - 1 || j + y > size - 1)
+								value = 0;
+							else
+								value = accA[(x + i)*size+(y + j)];
+							sum += value * accKernel[(i+kernel_rad)* kernel_size + (j+kernel_rad)];
+						}
+					}
+					accB[x*size+y] = sum;
+
+				});	//end parallel_for
+			}); //end submit
+
+			e.wait();
+			#else 
+				sycl::range<3> dimBlock(1, BLOCK_SIZE, BLOCK_SIZE);
+				sycl::range<3> dimGrid(1, ceil(float(m) / dimBlock[1]),ceil(float(n) / dimBlock[2]));
+
+				sycl::buffer<bench_t> buffA(A, (N*N));
+				sycl::buffer<bench_t> buffB(B, (N*N));
+				sycl::buffer<bench_t> buffKernel(kernel, (kernel_size*kernel_size));
+
+				unsigned int kernel_rad =  kernel_size / 2;
+				unsigned int size_shared = (BLOCK_SIZE + kernel_rad * 2) * sizeof(bench_t) * (BLOCK_SIZE + kernel_rad * 2) * sizeof(bench_t);
+				unsigned int size_shared_position = (BLOCK_SIZE + kernel_rad *2);
+
+				myQueue.submit([&](sycl::handler& cgh){
+					//create accessors 
+					auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
+					auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+					auto accKernel = buffKernel.get_access<sycl::access::mode::read>(cgh);
+					sycl::accessor<uint8_t, 1, sycl::access_mode::read_write, sycl::access::target::local> local_data(sycl::range<1>(size_shared), cgh);
+				
+					cgh.parallel_for(sycl::nd_range<3>(dimGrid * dimBlock, dimBlock),
+						[=](sycl::nd_item<3> idx) {
+							covolution_kernel_GPU( accA.get_pointer(), accB.get_pointer(), accKernel.get_pointer(), n, m, w, kernel_size, size_shared_position, kernel_rad, local_data.get_pointer(), idx);
+					});
+				}).wait();
+			#endif 
+
+	}catch (const sycl::exception& e) {
+        std::cout << "Exception caught: " << e.what() << std::endl;
     }
-	
 	#endif 
 }
 
@@ -481,7 +617,7 @@ void execute_kernel(GraficObject *device_object, unsigned int input_data, unsign
 		// 1-1 Step convolution
 		convolution_kernel(aux_input_data, device_object->conv_1_output, device_object->kernel_1, input_data, input_data, input_data, kernel_1);
 
-		// 1-2 Step activation
+		// // 1-2 Step activation
 		relu_kernel(device_object->conv_1_output, device_object->conv_1_output, input_data);
 		
 		// 1-3 Step pooling
