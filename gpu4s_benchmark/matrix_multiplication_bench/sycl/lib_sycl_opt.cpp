@@ -28,6 +28,7 @@ bool device_memory_init(GraficObject *device_object, unsigned int size_a_matrix,
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* h_B, unsigned int size_a, unsigned int size_b)
 {
+	const double start_wtime = omp_get_wtime();
 	#ifdef USM
 	myQueue.memcpy(device_object->d_A, h_A, (size_a)*sizeof(bench_t)).wait();
 	myQueue.memcpy(device_object->d_B, h_B, (size_b)*sizeof(bench_t)).wait();
@@ -35,6 +36,7 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, bench_t* h
 	device_object->d_A = h_A;
 	device_object->d_B = h_B;
 	#endif
+	device_object->elapsed_time_HtD = omp_get_wtime() - start_wtime;
 }
 
 
@@ -153,12 +155,14 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 {	     
+	const double start_wtime = omp_get_wtime();
 	#ifdef USM  
 	myQueue.memcpy(h_C, device_object->d_C, (size)*sizeof(bench_t)).wait();
 	#else
 	 // todo
 	memcpy(h_C, &device_object->d_C[0], sizeof(bench_t)*size);
 	#endif
+	device_object->elapsed_time_DtH = omp_get_wtime() - start_wtime;
 	printf("h_C[0]= %f\n", h_C[0]); 
 }
 
@@ -173,9 +177,9 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
     } 
 	else
 	{
-		printf("Elapsed time Host->Device: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Host->Device: %.10f milliseconds\n", device_object->elapsed_time_HtD * 1000.f);
 		printf("Elapsed time kernel: %.10f milliseconds\n", device_object->elapsed_time * 1000.f);
-		printf("Elapsed time Device->Host: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Device->Host: %.10f milliseconds\n", device_object->elapsed_time_DtH * 1000.f);
     }
     return device_object->elapsed_time * 1000.f;
 }
