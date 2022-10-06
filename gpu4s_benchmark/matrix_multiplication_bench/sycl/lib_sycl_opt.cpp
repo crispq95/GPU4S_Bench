@@ -85,13 +85,13 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
             B_tile[item_ct1.get_local_id(2) * BLOCK_SIZE +
                    item_ct1.get_local_id(1)] = B[idx];
         }
-        item_ct1.barrier(sycl::access::fence_space::local_space);
+        item_ct1.barrier();
         for (unsigned int k = 0; k < BLOCK_SIZE; ++k)
         {
             acumulated += A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + k] *
                           B_tile[k * BLOCK_SIZE + item_ct1.get_local_id(1)];
         }
-        item_ct1.barrier(sycl::access::fence_space::local_space);
+        item_ct1.barrier();
     }
     if (i < n && j < w)
     {
@@ -110,12 +110,12 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	unsigned int i, j, k;
 
 	sycl::range<3> dimBlock(1, BLOCK_SIZE, BLOCK_SIZE);
-    sycl::range<3> dimGrid(1, ceil(float(m) / dimBlock[1]), ceil(float(n) / dimBlock[2]));
+    sycl::range<3> dimGrid(1, ceil(float(n) / dimBlock[1]), ceil(float(m) / dimBlock[2]));
 	
 	#ifdef USM 
 	myQueue.submit([&](sycl::handler &cgh) {
-        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(16), cgh);
-        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(16), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(BLOCK_SIZE*BLOCK_SIZE), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(BLOCK_SIZE*BLOCK_SIZE), cgh);
 
         cgh.parallel_for(sycl::nd_range<3>(dimGrid * dimBlock, dimBlock),
 			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B, d_C_local=device_object->d_C](sycl::nd_item<3> idx) {
