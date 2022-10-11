@@ -158,7 +158,12 @@ class my_device_selector : public sycl::device_selector {
 		return -1;	
 	}
 };
-auto myQueue = sycl::queue{my_device_selector{}, sycl::property::queue::in_order{}};
+// auto myQueue = sycl::queue{my_device_selector{}, sycl::property::queue::in_order{}};
+#ifdef GPU
+	auto myQueue = sycl::queue{my_device_selector{}};
+#else
+	auto myQueue = sycl::queue{sycl::host_selector()};
+#endif
 #endif
 
 void init(GraficObject *device_object, char* device_name);

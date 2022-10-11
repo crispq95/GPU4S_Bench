@@ -56,10 +56,11 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	#ifdef USM
 	myQueue
 	   .parallel_for<LRN_bench_kernel>(
-			sycl::range{n*n}, 
+			sycl::range{n}, 
 			[=, d_A_local=device_object->d_A, d_B_local=device_object->d_B](sycl::id<1> idx){
-
-				d_B_local[idx] = d_A_local[idx]/sycl::powr((K+ALPHA*powf(d_A_local[idx[0]],2)), BETA);
+				
+				for(int j=0; j<n; j++)
+					d_B_local[idx] = d_A_local[idx*n+j]/sycl::powr((K+ALPHA*powf(d_A_local[idx[0]*n+j],2)), BETA);
 			}).wait();
 	#else 
 	try {
@@ -73,10 +74,11 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 			auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
 			
 			cgh.parallel_for<LRN_bench_kernel>(
-				sycl::range<1>{n*n}, [=](sycl::id<1> idx){ 
+				sycl::range<1>{n}, [=](sycl::id<1> idx){  
 				bench_t sum = 0.0;
-
-				accB[idx] = accA[idx]/sycl::powr((K+ALPHA*powf(accA[idx],2)),BETA);
+				
+				for(int j=0; j<n; j++)
+					accB[idx*n+j] = accA[idx*n+j]/sycl::powr((K+ALPHA*powf(accA[idx*n+j],2)),BETA);
 
 			});	//end parallel_for
 		}); //end submit

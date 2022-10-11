@@ -108,6 +108,8 @@ struct GraficObject{
 	bench_t* d_B;
 	#endif
 	float elapsed_time;
+	float elapsed_time_DtH;
+	float elapsed_time_HtD;
 };
 
 #ifdef SYCL
@@ -131,7 +133,13 @@ class my_device_selector : public sycl::device_selector {
 	}
 };
 
-auto myQueue = sycl::queue{my_device_selector{}};
+#ifdef GPU
+	auto myQueue = sycl::queue{my_device_selector{}};
+#else
+	auto myQueue = sycl::queue{sycl::host_selector()};
+#endif
+
+// auto myQueue = sycl::queue{my_device_selector{}};
 #endif
 
 void init(GraficObject *device_object, char* device_name);

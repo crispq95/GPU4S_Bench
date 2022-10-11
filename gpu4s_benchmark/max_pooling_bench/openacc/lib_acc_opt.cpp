@@ -36,29 +36,34 @@ void copy_memory_to_device(GraficObject *device_object, bench_t* h_A, unsigned i
 void execute_kernel(GraficObject *restrict device_object, unsigned int n, unsigned int m, unsigned int w, unsigned int stride, unsigned int lateral_stride)
 {
 		// Start compute timer
+	
+	const unsigned int block_size = n/stride;
+	#pragma acc enter data copyin(device_object[0:2])
+	#pragma acc enter data copyin(device_object->d_A[:n*n]) create(device_object->d_B[0:block_size*block_size]) 
 	const double start_wtime = omp_get_wtime();
 	
-	bench_t max_value = 0;
-	const unsigned int block_size = n/stride;
-	#pragma acc parallel private(max_value)
+	const unsigned int s_test = lateral_stride*lateral_stride;
+
+	// printf("s_test : %d\n",s_test);
+	#pragma acc parallel firstprivate(lateral_stride,n) 
 	{
-	#pragma acc loop  
-	for (unsigned int block = 0; block < block_size*block_size; ++block){
-		const unsigned int blockx = block%block_size;
-		const unsigned int blocky =	block/block_size;
-		const unsigned int block_zero = blockx*stride + blocky*stride*n;
-		max_value = device_object->d_A[block_zero];	
-		#pragma acc loop seq collapse(2) reduction(max:max_value)
+	// #pragma acc loop  
+	#pragma acc loop independent
+	for (unsigned int i = 0; i < s_test; ++i){
+		bench_t max_value = device_object->d_A[(((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) ];
+		#pragma acc loop collapse(2) reduction(max:max_value) firstprivate(max_value) 
 		for(unsigned int x = 0; x < stride; ++x){
 			for(unsigned int y = 0; y < stride; ++y){
-				max_value = max(max_value, device_object->d_A[(block_zero+x) + y*n]);
+				max_value = max(max_value, device_object->d_A[((((i%lateral_stride) * stride )+ ((i/lateral_stride)*n * stride)) + x)  + ( y * n)]);
+				}
 			}
-		}
-		device_object->d_B[block] = max_value;	
+		device_object->d_B[i] = max_value;
 	}
 	}
-	// End compute timer
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
+
+	#pragma acc exit data copyout(device_object->d_B[0:block_size*block_size])
+	// End compute timer
 
 }
 

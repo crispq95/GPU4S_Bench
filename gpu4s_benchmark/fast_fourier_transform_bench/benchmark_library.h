@@ -29,6 +29,18 @@ typedef cufftDoubleComplex bench_cuda_complex;
 #elif OPENMP
 // OpenMP lib
 #include <omp.h>
+#elif OPENACC
+// OpenACC lib
+#include <openacc.h>
+#include <omp.h>
+#elif SYCL
+// SYCL lib 
+#if __has_include(<SYCL/sycl.hpp>)
+#include <SYCL/sycl.hpp>
+#else
+#include <CL/sycl.hpp>
+#endif
+#include <omp.h> 
 #elif HIP
 // HIP part
 #include <hip/hip_runtime.h>
@@ -38,6 +50,33 @@ typedef cufftDoubleComplex bench_cuda_complex;
 
 #ifndef BENCHMARK_H
 #define BENCHMARK_H
+
+#ifdef SYCL
+class my_device_selector : public sycl::device_selector {
+	public:
+	int operator()(const sycl::device& dev) const override {
+		#ifdef GPU
+		if ( dev.has(sycl::aspect::gpu)) {
+			return 1;
+		}else {
+			return -1;
+		}
+		#else
+		if ( dev.has(sycl::aspect::cpu)) {
+			return 1;
+		}else {
+			return -1; 
+		}
+		#endif
+		return -1;	
+	}
+};
+#ifdef GPU
+	auto myQueue = sycl::queue{my_device_selector{}};
+#else
+	auto myQueue = sycl::queue{sycl::host_selector()};
+#endif
+#endif
 
 struct GraficObject{
 	#ifdef CUDA 
@@ -67,6 +106,14 @@ struct GraficObject{
 	// OpenMP part
 	bench_t* d_B;
 	bench_t* d_Br;
+	#elif OPENACC
+	// OpenACC part
+	bench_t* d_B;
+	bench_t* d_Br;
+	#elif SYCL
+	// SYCL part
+	bench_t* d_B;
+	bench_t* d_Br;
 	#elif HIP
 	// Hip part --
 	bench_t* d_B;
@@ -83,7 +130,11 @@ struct GraficObject{
 	bench_t* d_Br;
 	#endif
 	float elapsed_time;
+	float elapsed_time_HtD;
+	float elapsed_time_DtH;
 };
+
+
 
 void init(GraficObject *device_object, char* device_name);
 void init(GraficObject *device_object, int platform, int device, char* device_name);

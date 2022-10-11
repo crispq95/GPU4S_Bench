@@ -60,7 +60,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 					#elif FLOAT
 					d_B_local[i] = sycl::max(threshold, d_A_local[i]); 
 					#else
-					d_B_local[i] = sycl::maxf(threshold, d_A_local[i]); 
+					d_B_local[i] = fmaxf(threshold, d_A_local[i]); 
 					#endif
 				}
 			}).wait();
@@ -72,8 +72,8 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 
 	myQueue.submit([&](sycl::handler& cgh){
 		//create accessors 
-		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
-		auto accB = buffB.get_access<sycl::access::mode::write>(cgh);
+		sycl::accessor accB(buffB, cgh, sycl::write_only, sycl::no_init);
+		sycl::accessor accA(buffA, cgh, sycl::read_only);
 		
 		cgh.parallel_for<class relu>(
 			sycl::nd_range<3>(grid_row * block, block), [=](sycl::nd_item<3> idx){
@@ -88,7 +88,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 				#elif FLOAT
 				accB[i] = sycl::max(threshold, accA[i]); 
 				#else
-				accB[i] = sycl::maxf(threshold, accA[i]); 
+				accB[i] = fmaxf(threshold, accA[i]); 
   				#endif
 
 			}
@@ -111,6 +111,7 @@ void copy_memory_to_host(GraficObject *device_object, bench_t* h_C, int size)
 	#else
 	memcpy(h_C, &device_object->d_B[0], sizeof(bench_t)*size);
 	#endif
+	printf("h_C[0] : %f\n", h_C[0]); 
 }
 
 

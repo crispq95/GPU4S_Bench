@@ -40,14 +40,13 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
-	
+	auto wgroup_size = 64;
+	auto part_size = wgroup_size * 2;
+	auto n_wgroups = ((n*n)+part_size-1)/part_size; 
+
 	#ifdef USM
 
     bench_t *sum_values = sycl::malloc_device<bench_t>(1, myQueue);
-    
-    auto wgroup_size = 32;
-	auto part_size = wgroup_size * 2;
-	auto n_wgroups = ((n*n)+part_size-1)/part_size; 
 
     
     myQueue.submit([&](sycl::handler& cgh) {
@@ -87,13 +86,13 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 
 	myQueue
 	   .parallel_for<class mm_kernel>(
-			sycl::range<1>{n}, 
+			sycl::range<1>{n*n}, 
 			[=,  d_A_local=device_object->d_A, d_B_local=device_object->d_B]\
 			(sycl::id<1> idx)  {
 				int i = idx[0];
 				
-				for (unsigned int j = 0; j < n; ++j){			
-					d_B_local[i*n+j] = (d_B_local[i*n+j]/(*sum_values));
+				if (i  < (n*n)){	 
+					d_B_local[i] = (d_B_local[i]/(*sum_values));
 				}
 				
 		}).wait();
@@ -103,9 +102,7 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	bench_t add = 0;
 	{
 	sycl::buffer<bench_t> counter_buf(&add, 1);
-	auto wgroup_size = 32;
-	auto part_size = wgroup_size * 2;
-	auto n_wgroups = ((n*n)+part_size-1)/part_size; 
+	
 	
 	sycl::buffer<bench_t> buffA(device_object->d_A, (n * n));
 	sycl::buffer<bench_t> buffB(device_object->d_B, (n * n));

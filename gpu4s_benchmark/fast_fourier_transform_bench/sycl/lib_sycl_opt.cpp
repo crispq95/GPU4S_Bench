@@ -85,12 +85,14 @@ bool device_memory_init(GraficObject *device_object, int64_t size)
 
 void copy_memory_to_device(GraficObject *device_object, bench_t* h_B,int64_t size)
 {
+    const double start_wtime = omp_get_wtime();
     #ifdef USM
     myQueue.memcpy(device_object->d_B, h_B, (size)*sizeof(bench_t)).wait();
     #else 
     // device_object->d_Br = h_B;
     memcpy(device_object->d_B, &h_B[0], sizeof(bench_t)*size);
     #endif
+    device_object->elapsed_time_HtD = omp_get_wtime() - start_wtime;
 }
 
 void execute_kernel(GraficObject *device_object, int64_t size)
@@ -147,7 +149,7 @@ void execute_kernel(GraficObject *device_object, int64_t size)
                 }).wait();
         #else 
             sycl::buffer<bench_t> buffBr(device_object->d_Br, (s*2));
-            
+
             myQueue.submit([&](sycl::handler& cgh) {
                 auto accBr = buffBr.get_access<sycl::access::mode::read_write>(cgh);
 
@@ -166,12 +168,14 @@ void execute_kernel(GraficObject *device_object, int64_t size)
 
 
 void copy_memory_to_host(GraficObject *device_object, bench_t* h_B, int64_t size)
-{	     
+{	   
+    const double start_wtime = omp_get_wtime();  
     #ifdef USM
     myQueue.memcpy(h_B, device_object->d_Br, (size)*sizeof(bench_t)).wait();
     #else 
     memcpy(h_B, &device_object->d_Br[0], sizeof(bench_t)*size);
     #endif 
+    device_object->elapsed_time_DtH = omp_get_wtime() - start_wtime;
     return;
 }
 
@@ -187,9 +191,9 @@ float get_elapsed_time(GraficObject *device_object, bool csv_format, bool csv_fo
     } 
 	else
 	{
-		printf("Elapsed time Host->Device: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Host->Device: %.10f milliseconds\n", device_object->elapsed_time_HtD * 1000.f);
 		printf("Elapsed time kernel: %.10f milliseconds\n", device_object->elapsed_time * 1000.f);
-		printf("Elapsed time Device->Host: %.10f milliseconds\n", (bench_t) 0);
+		printf("Elapsed time Device->Host: %.10f milliseconds\n", device_object->elapsed_time_DtH * 1000.f);
     }
 	return device_object->elapsed_time * 1000.f;
 }

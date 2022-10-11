@@ -89,13 +89,23 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 		auto a_bA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto a_bB = buffB.get_access<sycl::access::mode::read_write>(cgh);
 
-		cgh.parallel_for<class reduction_kernel>(sycl::range<1>{n*n}, 
+		cgh.parallel_for<class reduction_kernel>(sycl::range<1>{n}, 
 		[=](sycl::id<1> idx){
-			sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
-			sycl::access::address_space::global_space> ao (atomic_buf[0]);
+			// sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
+			// sycl::access::address_space::global_space> ao (atomic_buf[0]);
 
-			a_bB[idx] = sycl::exp(a_bA[idx]);
-			ao += a_bB[idx];
+			// a_bB[idx] = sycl::exp(a_bA[idx]);
+			// ao += a_bB[idx];
+
+			int i = idx[0];
+					
+				for (unsigned int j = 0; j < n; ++j){			
+					a_bB[i*n+j] = sycl::exp(a_bB[i*n+j]);
+					sycl::atomic_ref<bench_t, sycl::memory_order::relaxed, sycl::memory_scope::device, \ 
+					sycl::access::address_space::global_space> ao (atomic_buf[0]);
+
+					ao += a_bB[i*n+j]; 
+				}
 		});
     }).wait();
 
@@ -104,10 +114,14 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 		auto a_bB = buffB.get_access<sycl::access::mode::write>(cgh);
 		auto atomic_buf = counter_buf.get_access<sycl::access::mode::read>(cgh);
 
-		cgh.parallel_for<class sm_kernel>(sycl::range<1>{n*n}, 
+		cgh.parallel_for<class sm_kernel>(sycl::range<1>{n}, 
 		[=](sycl::id<1> idx){
-			a_bB[idx] = a_bB[idx]/atomic_buf[0];
-
+			// a_bB[idx] = a_bB[idx]/atomic_buf[0];
+			int i = idx[0];
+				
+			for (unsigned int j = 0; j < n; ++j){			
+				a_bB[i*n+j] = (a_bB[i*n+j]/(atomic_buf[0]));
+			}
 		});
 	}).wait();
     }

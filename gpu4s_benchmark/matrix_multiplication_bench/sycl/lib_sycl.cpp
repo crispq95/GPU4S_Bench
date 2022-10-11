@@ -57,6 +57,7 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 {
 	// Start compute timer
 	const double start_wtime = omp_get_wtime();
+	time_t start = clock();
 	// Compute traditional matrix multiplication approach 
 	#ifdef USM
 	myQueue
@@ -92,6 +93,9 @@ void execute_kernel(GraficObject *device_object, unsigned int n, unsigned int m,
 	#endif
 	
 	// End compute timer
+	time_t end = clock();
+	double detectionTime = (double)(end-start)/CLOCKS_PER_SEC * 1000;
+	printf("\nTASK 1 - Execution time = %f ms.\n", detectionTime);
 	device_object->elapsed_time = omp_get_wtime() - start_wtime;
 }
 
