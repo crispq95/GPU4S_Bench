@@ -57,46 +57,32 @@ void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C
     unsigned int j = idx.get_group(1) * BLOCK_SIZE + idx.get_local_id(1);
 
     bench_t acumulated = 0;
-    unsigned int idx = 0;
+    unsigned int id_x = 0;
 
     // load memory
     for (unsigned int sub = 0; sub < idx.get_group_range(2); ++sub)
     {
+        id_x = i * n + sub * BLOCK_SIZE + idx.get_local_id(1);
 
-        idx = i * n + sub * BLOCK_SIZE + idx.get_local_id(1);
-
-        if(idx >= m*n)
-        {
+        if(id_x >= m*n)
             A_tile[idx.get_local_id(2) * BLOCK_SIZE + idx.get_local_id(1)] = 0;
-        }
         else
-        {
-            A_tile[idx.get_local_id(2) * BLOCK_SIZE +
-                   idx.get_local_id(1)] = A[idx];
-        }
-        idx = (sub * BLOCK_SIZE + idx.get_local_id(2)) * w + j;
+            A_tile[idx.get_local_id(2) * BLOCK_SIZE +idx.get_local_id(1)] = A[id_x];
 
-        if (idx >= m*w)
-        {
+    	id_x = (sub * BLOCK_SIZE + idx.get_local_id(2)) * w + j;
+
+        if (id_x >= m*w)
             B_tile[idx.get_local_id(2) * BLOCK_SIZE + idx.get_local_id(1)] = 0;
-        }
         else
-        {
-            B_tile[idx.get_local_id(2) * BLOCK_SIZE +
-                   idx.get_local_id(1)] = B[idx];
-        }
+            B_tile[idx.get_local_id(2) * BLOCK_SIZE + idx.get_local_id(1)] = B[id_x];
         idx.barrier();
+	    
         for (unsigned int k = 0; k < BLOCK_SIZE; ++k)
-        {
-            acumulated += A_tile[idx.get_local_id(2) * BLOCK_SIZE + k] *
-                          B_tile[k * BLOCK_SIZE + idx.get_local_id(1)];
-        }
+            acumulated += A_tile[idx.get_local_id(2) * BLOCK_SIZE + k] * B_tile[k * BLOCK_SIZE + idx.get_local_id(1)];
         idx.barrier();
     }
     if (i < n && j < w)
-    {
         C[i *n + j] = acumulated;
-    }
 }
 
 
@@ -109,7 +95,7 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	unsigned int i, j, k;
 
 	sycl::range<3> dimBlock(1, BLOCK_SIZE, BLOCK_SIZE);
-    sycl::range<3> dimGrid(1, ceil(float(n) / dimBlock[1]), ceil(float(m) / dimBlock[2]));
+    	sycl::range<3> dimGrid(1, ceil(float(n) / dimBlock[1]), ceil(float(m) / dimBlock[2]));
 	
 	#ifdef USM 
 	myQueue.submit([&](sycl::handler &cgh) {
@@ -130,8 +116,8 @@ void execute_kernel(GraficObject * device_object, unsigned int n, unsigned int m
 	int blockSize = 4;
 
 	myQueue.submit([&](sycl::handler &cgh) {
-        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(16), cgh);
-        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(16), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> A_tile(sycl::range<1>(BLOCK_SIZE*BLOCK_SIZE), cgh);
+        sycl::accessor<bench_t, 1, sycl::access_mode::read_write, sycl::access::target::local> B_tile(sycl::range<1>(BLOCK_SIZE*BLOCK_SIZE), cgh);
 
 		auto accA = buffA.get_access<sycl::access::mode::read>(cgh);
 		auto accB = buffB.get_access<sycl::access::mode::read>(cgh);
