@@ -50,52 +50,51 @@ void transpose(bench_t *A, bench_t *B, int n) {
 }
 
 void matrix_multiplication_kernel(const bench_t *A,const bench_t *B,  bench_t *C, const int n, const int m, const int w,
-                             sycl::nd_item<3> item_ct1, bench_t *A_tile, bench_t *B_tile)
+                             sycl::nd_item<3> idx, bench_t *A_tile, bench_t *B_tile)
 {
 
-    unsigned int i = item_ct1.get_group(2) * BLOCK_SIZE + item_ct1.get_local_id(2);
-    unsigned int j = item_ct1.get_group(1) * BLOCK_SIZE + item_ct1.get_local_id(1);
+    unsigned int i = idx.get_group(2) * BLOCK_SIZE + idx.get_local_id(2);
+    unsigned int j = idx.get_group(1) * BLOCK_SIZE + idx.get_local_id(1);
 
     bench_t acumulated = 0;
     unsigned int idx = 0;
 
     // load memory
-    for (unsigned int sub = 0; sub < item_ct1.get_group_range(2); ++sub)
+    for (unsigned int sub = 0; sub < idx.get_group_range(2); ++sub)
     {
 
-        idx = i * n + sub * BLOCK_SIZE + item_ct1.get_local_id(1);
+        idx = i * n + sub * BLOCK_SIZE + idx.get_local_id(1);
 
         if(idx >= m*n)
         {
-            A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + item_ct1.get_local_id(1)] = 0;
+            A_tile[idx.get_local_id(2) * BLOCK_SIZE + idx.get_local_id(1)] = 0;
         }
         else
         {
-            A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE +
-                   item_ct1.get_local_id(1)] = A[idx];
+            A_tile[idx.get_local_id(2) * BLOCK_SIZE +
+                   idx.get_local_id(1)] = A[idx];
         }
-        idx = (sub * BLOCK_SIZE + item_ct1.get_local_id(2)) * w + j;
+        idx = (sub * BLOCK_SIZE + idx.get_local_id(2)) * w + j;
 
         if (idx >= m*w)
         {
-            B_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + item_ct1.get_local_id(1)] = 0;
+            B_tile[idx.get_local_id(2) * BLOCK_SIZE + idx.get_local_id(1)] = 0;
         }
         else
         {
-            B_tile[item_ct1.get_local_id(2) * BLOCK_SIZE +
-                   item_ct1.get_local_id(1)] = B[idx];
+            B_tile[idx.get_local_id(2) * BLOCK_SIZE +
+                   idx.get_local_id(1)] = B[idx];
         }
-        item_ct1.barrier();
+        idx.barrier();
         for (unsigned int k = 0; k < BLOCK_SIZE; ++k)
         {
-            acumulated += A_tile[item_ct1.get_local_id(2) * BLOCK_SIZE + k] *
-                          B_tile[k * BLOCK_SIZE + item_ct1.get_local_id(1)];
+            acumulated += A_tile[idx.get_local_id(2) * BLOCK_SIZE + k] *
+                          B_tile[k * BLOCK_SIZE + idx.get_local_id(1)];
         }
-        item_ct1.barrier();
+        idx.barrier();
     }
     if (i < n && j < w)
     {
-        
         C[i *n + j] = acumulated;
     }
 }
